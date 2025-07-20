@@ -1,0 +1,95 @@
+﻿{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Login{% endblock %}
+
+{% block extra_css %}
+<style>
+    .login-page {
+        display: flex;
+        min-height: 80vh;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .login-container {
+        display: flex;
+        flex-wrap: wrap;
+        width: 100%;
+        max-width: 1000px;
+        background-color: white;
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+
+    .login-left {
+        flex: 1;
+        background-image: url("{% static 'images/login-bg.jpg' %}");
+        background-size: cover;
+        background-position: center;
+        min-height: 400px;
+    }
+
+    .login-right {
+        flex: 1;
+        padding: 40px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+
+    .header {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .header img {
+        height: 60px;
+        margin: 0 10px;
+    }
+
+    .header h2 {
+        font-size: 1.25rem;
+        margin-top: 15px;
+        color: #333;
+    }
+
+    .form-control {
+        margin-bottom: 15px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="login-page">
+    <div class="login-container">
+        <!-- Left side image -->
+        <div class="login-left"></div>
+
+        <!-- Right side login box -->
+        <div class="login-right">
+            <div class="header">
+                <img src="{% static 'images/miit-logo.jpg' %}" alt="MIIT Logo">
+                <img src="{% static 'images/miit-logo1.jpg' %}" alt="MIIT Logo 2">
+                <h2>Myanmar Institute of Information Technology</h2>
+            </div>
+
+            <h3 class="mb-3 text-center">Login</h3>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="post">
+                {% csrf_token %}
+                <input type="text" name="username" class="form-control" placeholder="Username" required>
+                <input type="password" name="password" class="form-control" placeholder="Password" required>
+                <button type="submit" class="btn btn-primary w-100">Login</button>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h2 class="my-4">Teacher Dashboard</h2>
+    
+    <!-- Quiz Creation Card -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5>Create New Quiz</h5>
+        </div>
+        <div class="card-body">
+            <a href="{% url 'create_quiz' %}" class="btn btn-success">
+                <i class="fas fa-plus"></i> New Quiz
+            </a>
+        </div>
+    </div>
+
+    <!-- Your Quizzes Section -->
+    <div class="card">
+        <div class="card-header bg-info text-white">
+            <h5>Your Quizzes</h5>
+        </div>
+        <div class="card-body">
+            {% if quizzes %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="thead-light">
+                        <tr>
+                            <th>Title</th>
+                            <th>Status</th>
+                            <th>Open Time</th>
+                            <th>Close Time</th>
+                            <th>Time Limit</th>
+                            <th>Questions</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for quiz in quizzes %}
+                        <tr>
+                            <td>{{ quiz.title }}</td>
+                            <td>
+                                <span class="badge badge-{% if quiz.status == 'published' %}success{% else %}warning{% endif %}">
+                                    {{ quiz.get_status_display }}
+                                </span>
+                            </td>
+                            <td>{{ quiz.open_time|date:"M d, Y H:i" }}</td>
+                            <td>{{ quiz.close_time|date:"M d, Y H:i" }}</td>
+                            <td>{{ quiz.time_limit }} mins</td>
+                            <td>{{ quiz.questions.count }}</td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <a href="#" class="btn btn-outline-primary" title="View">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a href="#" class="btn btn-outline-secondary" title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <a href="#" class="btn btn-outline-danger" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-info">
+                You haven't created any quizzes yet. Click "New Quiz" to get started!
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

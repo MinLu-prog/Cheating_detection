@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Create New Quiz</h2>
+    <form method="post" class="mt-4">
+        {% csrf_token %}
+
+        <div class="mb-3">
+            <label class="form-label">Quiz Title *</label>
+            <input type="text" name="title" class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Number of Questions *</label>
+            <input type="number" name="question_count" class="form-control" min="1" required>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Time Limit (in minutes) *</label>
+            <input type="number" name="time_limit" class="form-control" min="1" required>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Open Date & Time *</label>
+            <input type="datetime-local" name="open_date" class="form-control" required>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Close Date & Time *</label>
+            <input type="datetime-local" name="close_date" class="form-control" required>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Create Quiz</button>
+    </form>
+</div>
+{% endblock %}
