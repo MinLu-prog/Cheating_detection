@@ -1,9 +1,115 @@
+{% load static %}
 <!DOCTYPE html>
-<html>
+
+<html lang="en">
 <head>
-    <title>Home</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Welcome - MIIT Cheating Detection System</title>
+  <style>
+    /* Reset and base */
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(to right, #fce4ec, #f8bbd0);
+  color: #333;
+}
+
+/* Full center */
+.page-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+/* Card box */
+.card {
+  background: #fff;
+  padding: 40px;
+  border-radius: 15px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  max-width: 650px;
+  width: 100%;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.logo {
+  width: 60px;
+  height: auto;
+}
+
+.header h1 {
+  font-size: 20px;
+  font-weight: bold;
+}
+
+/* Welcome content */
+.welcome-content h2 {
+  font-size: 26px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+.welcome-content hr {
+  width: 50px;
+  border: 2px solid #5c2c91;
+  margin-bottom: 20px;
+}
+
+.welcome-content p {
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 30px;
+}
+
+/* Button */
+.login-button {
+  display: inline-block;
+  padding: 12px 24px;
+  background-color: #5c2c91;
+  color: white;
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 15px;
+  box-shadow: 0 4px 10px rgba(92, 44, 145, 0.3);
+  transition: all 0.3s ease;
+}
+
+.login-button:hover {
+  background-color: #7b3fb6;
+  transform: scale(1.05);
+}
+
+  </style>
 </head>
 <body>
-    <h1>Welcome to the Home Page</h1>
+  <div class="page-container">
+    <div class="card">
+      <header class="header">
+        <img src="{% static 'images/miit-logo.jpg' %}" alt="MIIT Logo" class="logo" />
+        <h1>Myanmar Institute Of Information Technology</h1>
+      </header>
+
+      <section class="welcome-content">
+        <h2>Welcome</h2>
+        
+        <p>
+          Welcome to the MIIT Cheating Detection System. This platform ensures secure and fair examinations using real-time monitoring and AI. Please log in to continue.
+        </p>
+        <a href="{% url 'login' %}" class="login-button">Login Here</a>
+      </section>
+    </div>
+  </div>
 </body>
 </html>
