@@ -10,6 +10,11 @@ from django.contrib import messages
 from .models import Quiz, Question, Choice, StudentResponse
 import logging
 from django.http import HttpResponse
+from django.db.models import Count, Sum, Case, When, IntegerField
+import subprocess
+import os
+import sys
+from .utils import is_teacher, is_student
 
 logger = logging.getLogger(__name__)
 
@@ -21,44 +26,61 @@ def is_student(user):
     return user.groups.filter(name='Students').exists()
 
 # Login view
+# views.py
 def login_view(request):
     logger.debug(f"Request method: {request.method}, user: {request.user}, authenticated: {request.user.is_authenticated}")
-    
+
     if request.user.is_authenticated:
-        logger.debug("User is authenticated, redirecting based on role...")
+        logger.debug("User is already authenticated, redirecting...")
         if is_teacher(request.user):
-            logger.debug("Redirecting to teacher_dashboard")
-            return redirect('teacher_dashboard')
+                return redirect('teacher_dashboard')
         elif is_student(request.user):
-            logger.debug("Redirecting to student_dashboard")
-            return redirect('student_dashboard')
+                return redirect('student_dashboard')
         elif request.user.is_superuser:
-            logger.debug("Redirecting to admin")
-            return redirect('/admin/')
-        logger.debug("Redirecting to home")
+                return redirect('/admin/')
         return redirect('home')
 
     if request.method == 'POST':
         username = request.POST.get('username')
         password = request.POST.get('password')
         logger.debug(f"Attempting login for username: {username}")
+        
         user = authenticate(request, username=username, password=password)
 
         if user is None:
             logger.debug("Invalid login attempt")
             messages.error(request, 'Invalid username or password.')
             return render(request, 'proctor/login.html')
-        
+
         login(request, user)
         logger.info(f"User {user.username} logged in successfully")
 
+        # REDIRECTION LOGIC AFTER LOGIN
         if is_teacher(user):
             return redirect('teacher_dashboard')
+
         elif is_student(user):
-            return redirect('student_dashboard')
+            dataset_path = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                '../Real-time-Face-Recognition-Project/face_dataset'
+            )
+            dataset_file = os.path.join(dataset_path, f'{user.username}.npy')
+
+            if not os.path.exists(dataset_file):
+                logger.info(f"No dataset found for {user.username}, redirecting to face capture.")
+                request.session['pending_face_capture'] = True  # Optional flag
+                return redirect('capture_face')
+            else:
+                return redirect('student_dashboard')
+
+
+        elif user.is_superuser:
+            return redirect('/admin/')
+
         return redirect('home')
 
     return render(request, 'proctor/login.html')
+
 
  #Logout view
 def logout_view(request):
@@ -83,11 +105,31 @@ def student_dashboard(request):
         responses__student=request.user
     )
 
-    student_responses = StudentResponse.objects.filter(student=request.user).select_related('quiz', 'question', 'selected_choice')
+    # Corrected aggregation of quiz results
+    quiz_results = []
+    submitted_quizzes = (
+        StudentResponse.objects
+        .filter(student=request.user)
+        .values('quiz')
+        .distinct()
+    )
+
+    for item in submitted_quizzes:
+        quiz_id = item['quiz']
+        quiz = Quiz.objects.get(id=quiz_id)
+        responses = StudentResponse.objects.filter(student=request.user, quiz=quiz)
+        correct_answers = responses.filter(is_correct=True).count()
+        total_questions = quiz.questions.count()
+
+        quiz_results.append({
+            'quiz_title': quiz.title,
+            'correct_answers': correct_answers,
+            'total_questions': total_questions
+        })
 
     return render(request, 'proctor/student_dashboard.html', {
         'available_quizzes': available_quizzes,
-        'results': student_responses,
+        'results': quiz_results,
         'now': now,
     })
 
@@ -353,6 +395,59 @@ def take_quiz(request, quiz_id):
         'questions': quiz.questions.all().order_by('order'),
         'time_limit': quiz.time_limit * 60
     })
+
+import os
+import sys
+import subprocess
+import logging
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+
+logger = logging.getLogger(__name__)
+
+@login_required
+def capture_face_view(request):
+    user = request.user
+
+    # Only students should proceed
+    if not user.groups.filter(name='Students').exists():
+        return redirect('home')
+
+    # Define path to face dataset folder
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    dataset_path = os.path.join(base_dir, '../Real-time-Face-Recognition-Project/face_dataset')
+
+    # Abort if the dataset folder does not exist
+    if not os.path.isdir(dataset_path):
+        logger.error("Face dataset folder does not exist.")
+        return render(request, 'proctor/capture_face.html', {
+            'error': 'Face dataset folder not found. Please contact admin.'
+        })
+
+    # Path to this user's dataset file
+    dataset_file = os.path.join(dataset_path, f'{user.username}.npy')
+
+    # If face data already exists, skip
+    if os.path.exists(dataset_file):
+        logger.info(f"Face data already exists for {user.username}")
+        return redirect('student_dashboard')
+
+    if request.method == 'POST':
+        script_path = os.path.join(base_dir, '../Real-time-Face-Recognition-Project/face_data.py')
+
+        try:
+            subprocess.Popen(
+                [sys.executable, script_path, user.username],
+                cwd=os.path.join(base_dir, '../Real-time-Face-Recognition-Project'),
+                creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0  # Only on Windows
+            )
+            logger.info(f"Launched face capture script for {user.username}")
+            return render(request, 'proctor/capture_started.html')  # Optional screen: "Face capture started..."
+        except Exception as e:
+            logger.error(f"Failed to launch face capture script: {e}")
+            return render(request, 'proctor/capture_face.html', {'error': f"Error: {str(e)}"})
+
+    return render(request, 'proctor/capture_face.html')
 
 # General views
 def homepage(request):

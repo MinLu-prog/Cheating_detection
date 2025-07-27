@@ -23,4 +23,8 @@ urlpatterns = [
 
     # Webcam app
     path('webcam/', include('webcam.urls')),
+
+    # Face capture
+    path('capture-face/', views.capture_face_view, name='capture_face'),
+
 ]

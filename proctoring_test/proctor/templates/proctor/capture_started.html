@@ -1,0 +1,11 @@
+{% extends 'base.html' %}
+
+{% block title %}Capturing Face{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h2>Capturing Face Data...</h2>
+    <p>A new window has opened. Please follow the instructions there to finish capturing your face.</p>
+    <a href="{% url 'student_dashboard' %}" class="btn btn-success mt-3">Done</a>
+</div>
+{% endblock %}
