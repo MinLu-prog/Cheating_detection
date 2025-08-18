@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+
+{% block content %}
 <h1>Available Quizzes</h1>
 <ul>
   {% for quiz in quizzes %}
@@ -10,3 +12,4 @@
     <li>No quizzes available right now.</li>
   {% endfor %}
 </ul>
+{% endblock %}

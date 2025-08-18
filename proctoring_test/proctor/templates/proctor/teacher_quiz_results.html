@@ -1,0 +1,26 @@
+<h2>Results for "{{ quiz.title }}"</h2>
+
+{% for student, data in student_results.items %}
+  <div style="border:1px solid #ccc; margin:10px; padding:10px;">
+    <h3>{{ student.username }}</h3>
+    <p><strong>Score:</strong> {{ data.score }} / {{ data.total }}</p>
+
+    <h4>Answer Breakdown:</h4>
+    <ul>
+      {% for ans in data.answers %}
+        <li>
+          <strong>Q:</strong> {{ ans.question }}<br>
+          <strong>Student Answer:</strong> {{ ans.selected }}<br>
+          <strong>Correct Answer:</strong> {{ ans.correct_answer }}<br>
+          {% if ans.correct %}
+            ✅ Correct
+          {% else %}
+            ❌ Wrong
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% empty %}
+  <p>No student has attempted this quiz yet.</p>
+{% endfor %}

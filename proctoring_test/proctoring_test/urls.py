@@ -25,6 +25,12 @@ urlpatterns = [
     path('webcam/', include('webcam.urls')),
 
     # Face capture
-    path('capture-face/', views.capture_face_view, name='capture_face'),
+    path('verify-face/', views.verify_face, name='verify_face'),
 
+    path('capture-face/', views.capture_face_view, name='capture_face'),
+    path('teacher/quiz/<int:quiz_id>/results/', views.teacher_quiz_results, name='teacher_quiz_results'),
+
+    #path('quiz/<int:quiz_id>/', views.quiz_detail, name='quiz_detail'),
+    path('quiz/<int:quiz_id>/edit/', views.edit_quiz, name='edit_quiz'),
+    path('quiz/<int:quiz_id>/delete/', views.delete_quiz, name='delete_quiz'),
 ]

@@ -15,6 +15,7 @@ import subprocess
 import os
 import sys
 from .utils import is_teacher, is_student
+from .verify_face import verify_face_from_base64
 
 logger = logging.getLogger(__name__)
 
@@ -353,57 +354,234 @@ def available_quizzes(request):
         'now': now
     })
 
+import subprocess
+import sys
+import os
+import signal
+from django.utils.timezone import now
+
+face_process = {}  # Global PID tracker (in production, use session or DB)
+
 @login_required
 def take_quiz(request, quiz_id):
     if not is_student(request.user):
         messages.error(request, 'Access restricted to students.')
         return redirect('home')
-        
+
     quiz = get_object_or_404(Quiz, id=quiz_id)
-    now = timezone.now()
-    
-    if now < quiz.open_time or now > quiz.close_time:
+
+    if now() < quiz.open_time or now() > quiz.close_time:
         messages.error(request, 'Quiz is not currently available')
         return redirect('available_quizzes')
-    
+
+    # Don't allow retake
     if StudentResponse.objects.filter(student=request.user, quiz=quiz).exists():
         messages.warning(request, 'You have already taken this quiz')
         return redirect('student_dashboard')
 
-    if request.method == 'POST':
-        try:
-            for question in quiz.questions.all():
-                selected_choice_id = request.POST.get(f'question_{question.id}')
-                if selected_choice_id:
-                    selected_choice = get_object_or_404(Choice, id=selected_choice_id)
-                    StudentResponse.objects.create(
-                        student=request.user,
-                        quiz=quiz,
-                        question=question,
-                        selected_choice=selected_choice,
-                        is_correct=selected_choice.is_correct
-                    )
-            messages.success(request, 'Quiz submitted successfully!')
-            return redirect('student_dashboard')
-        except Exception as e:
-            logger.error(f"Quiz submission error: {str(e)}")
-            messages.error(request, 'Error submitting quiz')
-            return redirect('available_quizzes')
+    # ---- Start face recognition script ----
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    script_path = os.path.join(base_dir, '../Real-time-Face-Recognition-Project/face_recognition_script.py')  # adjust name
 
+    try:
+        process = subprocess.Popen(
+            [sys.executable, script_path],
+            cwd=os.path.dirname(script_path),
+            creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        )
+        # Save the process ID with user's session key
+        face_process[request.user.username] = process.pid
+        print(f"Started face recognition with PID: {process.pid}")
+    except Exception as e:
+        print(f"Failed to launch face recognition: {e}")
+        messages.error(request, 'Failed to start face recognition')
+
+    # ---- Show the quiz ----
     return render(request, 'proctor/take_quiz.html', {
         'quiz': quiz,
         'questions': quiz.questions.all().order_by('order'),
         'time_limit': quiz.time_limit * 60
     })
 
-import os
-import sys
+
 import subprocess
-import logging
-from django.shortcuts import render, redirect
+import sys
+import os
+import signal
+from django.utils.timezone import now
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from .models import Quiz, StudentResponse  # adjust imports if needed
+
+face_process = {}  # Global PID tracker (in production, use session or DB)
+
+@login_required
+def take_quiz(request, quiz_id):
+    if not is_student(request.user):
+        messages.error(request, 'Access restricted to students.')
+        return redirect('home')
+
+    quiz = get_object_or_404(Quiz, id=quiz_id)
+
+    if now() < quiz.open_time or now() > quiz.close_time:
+        messages.error(request, 'Quiz is not currently available')
+        return redirect('available_quizzes')
+
+    # Don't allow retake
+    if StudentResponse.objects.filter(student=request.user, quiz=quiz).exists():
+        messages.warning(request, 'You have already taken this quiz')
+        return redirect('student_dashboard')
+
+    if request.method == 'POST':
+        # Save submitted answers
+        for question in quiz.questions.all():
+            selected_option_id = request.POST.get(f'question_{question.id}')
+            if selected_option_id:
+                StudentResponse.objects.create(
+                    student=request.user,
+                    quiz=quiz,
+                    question=question,
+                    selected_option_id=selected_option_id
+                )
+
+        # ---- Kill face recognition process ----
+        pid = face_process.get(request.user.username)
+        if pid:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                print(f"Killed face recognition with PID: {pid}")
+                del face_process[request.user.username]
+            except Exception as e:
+                print(f"Could not kill process {pid}: {e}")
+
+        messages.success(request, 'Quiz submitted successfully.')
+        return redirect('student_dashboard')
+
+    # ---- Start face recognition script ----
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    script_path = os.path.join(base_dir, '../Real-time-Face-Recognition-Project/face_recognition_script.py')  # adjust path
+
+    try:
+        process = subprocess.Popen(
+            [sys.executable, script_path],
+            cwd=os.path.dirname(script_path),
+            creationflags=subprocess.CREATE_NEW_CONSOLE if os.name == 'nt' else 0
+        )
+        face_process[request.user.username] = process.pid
+        print(f"Started face recognition with PID: {process.pid}")
+    except Exception as e:
+        print(f"Failed to launch face recognition: {e}")
+        messages.error(request, 'Failed to start face recognition')
+
+    # ---- Render quiz page ----
+    return render(request, 'proctor/take_quiz.html', {
+        'quiz': quiz,
+        'questions': quiz.questions.all().order_by('order'),
+        'time_limit': quiz.time_limit * 60
+    })
+
+import cv2, numpy as np, base64, os
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from django.utils.decorators import method_decorator
+from django.conf import settings
+
+# --- Utility functions ---
+def distance(v1, v2):
+    return np.sqrt(((v1 - v2) ** 2).sum())
+
+def knn(train, test, k=5):
+    dist = []
+    for i in range(train.shape[0]):
+        ix = train[i, :-1]
+        iy = train[i, -1]
+        d = distance(test, ix)
+        dist.append([d, iy])
+    dk = sorted(dist, key=lambda x: x[0])[:k]
+    labels = np.array(dk)[:, -1]
+    output = np.unique(labels, return_counts=True)
+    index = np.argmax(output[1])
+    return output[0][index]
+
+# --- Face verification view ---
+# views.py
+
+import base64
+import numpy as np
+import cv2
+import os
+import json
+from django.conf import settings
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 
-logger = logging.getLogger(__name__)
+from .knn_module import knn  # Ensure you import your KNN function correctly
+
+
+@csrf_exempt  # Keep only if using JavaScript fetch without CSRF token
+@login_required
+def verify_face(request):
+    if request.method != 'POST':
+        return JsonResponse({'valid': False, 'error': 'Invalid request method'})
+
+    # Step 1: Decode base64 image
+    try:
+        data = json.loads(request.body)
+        image_data = data.get('image', '').split(',')[1]
+        img_bytes = base64.b64decode(image_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    except Exception as e:
+        return JsonResponse({'valid': False, 'error': 'Failed to decode image data'})
+
+    # Step 2: Load dataset
+    dataset_path = os.path.join(settings.BASE_DIR, 'Real-time-Face-Recognition-Project', 'face_dataset')
+
+
+    face_data = []
+    labels = []
+    names = {}
+    class_id = 0
+
+    for fx in os.listdir(dataset_path):
+        if fx.endswith('.npy'):
+            name = fx[:-4]
+            names[class_id] = name
+            data_item = np.load(os.path.join(dataset_path, fx))
+            face_data.append(data_item)
+            labels.append(class_id * np.ones((data_item.shape[0],)))
+            class_id += 1
+
+    # Step 3: Validate that current user is in the dataset
+    if request.user.username not in names.values():
+        return JsonResponse({'valid': False, 'error': 'Your face is not registered in the dataset'})
+
+    # Step 4: Train KNN
+    face_dataset = np.concatenate(face_data, axis=0)
+    face_labels = np.concatenate(labels, axis=0).reshape((-1, 1))
+    trainset = np.concatenate((face_dataset, face_labels), axis=1)
+
+    # Step 5: Detect face in uploaded frame
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt.xml')
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+
+    if len(faces) == 0:
+        return JsonResponse({'valid': False, 'error': 'No face detected'})
+
+    for (x, y, w, h) in faces:
+        face_section = frame[y:y+h, x:x+w]
+        face_section = cv2.resize(face_section, (100, 100)).flatten()
+        out = knn(trainset, face_section)
+        predicted_name = names[int(out)]
+
+        if predicted_name == request.user.username:
+            return JsonResponse({'valid': True})
+
+    return JsonResponse({'valid': False, 'error': 'Face mismatch'})
 
 @login_required
 def capture_face_view(request):
@@ -449,9 +627,73 @@ def capture_face_view(request):
 
     return render(request, 'proctor/capture_face.html')
 
+
 # General views
 def homepage(request):
     return render(request, 'proctor/home.html')
 
 def about(request):
     return render(request, 'proctor/about.html')
+
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib import messages
+from .models import Quiz, StudentResponse
+
+def teacher_quiz_results(request, quiz_id):
+    # Ensure only the teacher who created the quiz can access
+    quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+
+    # Fetch all responses for this quiz
+    responses = StudentResponse.objects.filter(
+        quiz=quiz
+    ).select_related("student", "question", "selected_choice")
+
+    # Organize results per student
+    student_results = {}
+    for response in responses:
+        student = response.student
+        if student not in student_results:
+            student_results[student] = {
+                "score": 0,
+                "total": quiz.questions.count(),
+                "answers": []
+            }
+
+        # Get the correct answer text
+        correct_choice = response.question.choices.filter(is_correct=True).first()
+        correct_text = correct_choice.text if correct_choice else "No correct option set"
+
+        # Add answer details
+        if response.is_correct:
+            student_results[student]["score"] += 1
+
+        student_results[student]["answers"].append({
+            "question": response.question.text,
+            "selected": response.selected_choice.text if response.selected_choice else "No answer",
+            "correct": response.is_correct,
+            "correct_answer": correct_text
+        })
+
+    return render(request, "proctor/teacher_quiz_results.html", {
+        "quiz": quiz,
+        "student_results": student_results
+    })
+
+
+def delete_quiz(request, quiz_id):
+    if request.method == 'POST':
+        quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+        quiz.delete()
+        messages.success(request, f'Quiz "{quiz.title}" has been deleted.')
+        return redirect('teacher_dashboard')
+    else:
+        messages.warning(request, 'Invalid request method.')
+        return redirect('teacher_dashboard')
+
+from django.shortcuts import get_object_or_404, redirect
+from .models import Quiz
+
+def edit_quiz(request, quiz_id):
+    # Temporary: Just redirect back to dashboard until full edit is implemented
+    quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+    return redirect('teacher_dashboard')

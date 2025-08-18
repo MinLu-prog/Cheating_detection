@@ -1,5 +1,5 @@
 from django import forms
-from .models import Quiz, Question, Answer
+from .models import Quiz, Question, Choice
 
 class QuizForm(forms.ModelForm):
     class Meta:
@@ -13,5 +13,5 @@ class QuestionForm(forms.ModelForm):
 
 class AnswerForm(forms.ModelForm):
     class Meta:
-        model = Answer
+        model = Choice
         fields = ['text', 'is_correct']

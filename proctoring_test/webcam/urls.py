@@ -1,6 +1,7 @@
 from django.urls import path
-from . import views
+from .views import video_feed, proctoring_launcher
 
 urlpatterns = [
-    path('test/', views.proctoring_launcher, name='proctoring_launcher'),
+    path('video_feed/', video_feed, name='video_feed'),
+    path('start_proctoring/', proctoring_launcher, name='start_proctoring'),
 ]
