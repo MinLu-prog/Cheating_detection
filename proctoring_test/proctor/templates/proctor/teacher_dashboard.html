@@ -2,15 +2,15 @@
 
 {% block content %}
 <div class="container">
-    <h2 class="my-4">Teacher Dashboard</h2>
+    <h2 class="my-4 text-white">Teacher Dashboard</h2>
     
     <!-- Quiz Creation Card -->
     <div class="card mb-4">
-        <div class="card-header bg-primary text-white">
+        <div class="card-header bg-dark text-white">  <!-- Changed bg-primary to bg-dark -->
             <h5>Create New Quiz</h5>
         </div>
         <div class="card-body">
-            <a href="{% url 'create_quiz' %}" class="btn btn-success">
+            <a href="{% url 'create_quiz' %}" class="btn btn-dark">  <!-- Changed btn-success to btn-dark -->
                 <i class="fas fa-plus"></i> New Quiz
             </a>
         </div>
@@ -18,14 +18,14 @@
 
     <!-- Your Quizzes Section -->
     <div class="card">
-        <div class="card-header bg-info text-white">
+        <div class="card-header bg-dark text-white">  <!-- Changed bg-info to bg-dark -->
             <h5>Your Quizzes</h5>
         </div>
         <div class="card-body">
             {% if quizzes %}
             <div class="table-responsive">
                 <table class="table table-hover">
-                    <thead class="thead-light">
+                    <thead class="thead-dark">  <!-- Changed thead-light to thead-dark -->
                         <tr>
                             <th>Title</th>
                             <th>Status</th>
@@ -41,7 +41,7 @@
                         <tr>
                             <td>{{ quiz.title }}</td>
                             <td>
-                                <span class="badge badge-{% if quiz.status == 'published' %}success{% else %}warning{% endif %}">
+                                <span class="badge badge-dark">  <!-- Changed badge-success/badge-warning to badge-dark -->
                                     {{ quiz.get_status_display }}
                                 </span>
                             </td>
@@ -52,7 +52,7 @@
                             <td>
                                 <div class="btn-group btn-group-sm">
                                     <!-- View -->
-                                    <a href="{% url 'teacher_quiz_results' quiz.id %}" class="btn btn-outline-primary" title="View Results">
+                                    <a href="{% url 'teacher_quiz_results' quiz.id %}" class="btn btn-outline-dark" title="View Results">  <!-- Changed btn-outline-primary to btn-outline-dark -->
                                         <i class="fas fa-eye"></i>
                                     </a>
                                     <!-- Edit 
@@ -75,7 +75,7 @@
                 </table>
             </div>
             {% else %}
-            <div class="alert alert-info">
+            <div class="alert alert-dark">  <!-- Changed alert-info to alert-dark -->
                 You haven't created any quizzes yet. Click "New Quiz" to get started!
             </div>
             {% endif %}

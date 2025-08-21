@@ -4,13 +4,85 @@
 <div class="container">
     <h2>Capture Face</h2>
 
-    {% if error %}
-        <div class="alert alert-danger">{{ error }}</div>
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }}">{{ message }}</div>
+        {% endfor %}
     {% endif %}
 
-    <form method="POST">
+    <form method="POST" id="captureForm">
         {% csrf_token %}
-        <button type="submit" class="btn btn-primary">Start Face Capture</button>
+
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input sub-checkbox" id="steadyHead">
+            <label class="form-check-label" for="steadyHead">Keep your head steady</label>
+        </div>
+
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input sub-checkbox" id="fullHeadInCamera">
+            <label class="form-check-label" for="fullHeadInCamera">Make sure your entire head is in the camera</label>
+        </div>
+
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input sub-checkbox" id="noGlasses">
+            <label class="form-check-label" for="noGlasses">Do not wear glasses</label>
+        </div>
+
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input sub-checkbox" id="waitForFinish">
+            <label class="form-check-label" for="waitForFinish">Wait until face data capture finishes</label>
+        </div>
+
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input sub-checkbox" id="enterTerminal">
+            <label class="form-check-label" for="enterTerminal">Click Enter in terminal after capture is finished</label>
+        </div>
+
+        <div class="form-check">
+            <input type="checkbox" class="form-check-input sub-checkbox" id="clickDone">
+            <label class="form-check-label" for="clickDone">Click Done when face data is finished</label>
+        </div>
+
+        <div class="form-check mt-2">
+            <input type="checkbox" class="form-check-input" id="agreeAll">
+            <label class="form-check-label" for="agreeAll"><strong>Agree to All Terms Above</strong></label>
+        </div>
+
+        <button type="submit" class="btn btn-primary mt-3" id="startBtn" disabled>Start Face Capture</button>
     </form>
 </div>
+
+<script>
+const startBtn = document.getElementById('startBtn');
+const agreeAll = document.getElementById('agreeAll');
+const checkboxes = document.querySelectorAll('.sub-checkbox');
+
+// Function to update the Start button
+function updateStartButton() {
+    let allChecked = true;
+    checkboxes.forEach(cb => {
+        if(!cb.checked) allChecked = false;
+    });
+    startBtn.disabled = !allChecked;
+}
+
+// Link "Agree to All" checkbox
+agreeAll.addEventListener('change', () => {
+    const checked = agreeAll.checked;
+    checkboxes.forEach(cb => cb.checked = checked);
+    updateStartButton();
+});
+
+// Update button when any individual checkbox changes
+checkboxes.forEach(cb => {
+    cb.addEventListener('change', () => {
+        updateStartButton();
+        // Uncheck "Agree All" if any individual is unchecked
+        if(!cb.checked) agreeAll.checked = false;
+        // If all are checked, check "Agree All"
+
+        else if([...checkboxes].every(c => c.checked)) agreeAll.checked = true;
+    });
+});
+</script>
 {% endblock %}

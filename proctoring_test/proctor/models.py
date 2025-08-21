@@ -112,3 +112,33 @@ class StudentResponse(models.Model):
 
     def __str__(self):
         return f"{self.student.username}'s answer to Q{self.question.order} ({'Correct' if self.is_correct else 'Incorrect'})"
+
+
+# --------------------- NEW: QuizResult / QuizAttempt ---------------------
+class QuizResult(models.Model):
+    """
+    Aggregate result/attempt for a student on a quiz.
+    We keep one QuizResult per (quiz, student) — this prevents retakes.
+    If you want to support retakes later, add an `attempt_number` or `attempt` FK and
+    remove the unique_together constraint.
+    """
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='results')
+    student = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='quiz_results',
+        limit_choices_to={'groups__name': 'Students'}
+    )
+    score = models.IntegerField(default=0)
+    total = models.IntegerField(default=0)
+    percent = models.FloatField(default=0.0)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    # optionally store a snapshot of answers (question_id -> selected_choice_id)
+    answers = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('quiz', 'student')
+        ordering = ['-submitted_at']
+
+    def __str__(self):
+        return f"{self.student.username} - {self.quiz.title} - {self.percent:.1f}%"

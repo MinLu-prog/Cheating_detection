@@ -2,8 +2,66 @@
 {% load static %}
 {% block title %}Student Dashboard{% endblock %}
 
+{% block extra_css %}
+<style>
+    body {
+        margin: 0;
+        background: linear-gradient(to right, #2c3e50, #f126e3ff); /* same gradient as welcome & login */
+        min-height: 100vh;
+    }
+
+    .dashboard-container {
+        background: rgba(0, 0, 0, 0.7); /* semi-transparent dark card like welcome page */
+        color: white;
+        padding: 30px;
+        border-radius: 15px;
+        box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        max-width: 900px;
+        margin: 50px auto;
+    }
+
+    .dashboard-container h2 {
+        color: #fff;
+    }
+
+    .list-group-item {
+        background: rgba(255,255,255,0.1);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        margin-bottom: 10px;
+    }
+
+    .list-group-item h5 {
+        color: #fff;
+    }
+
+    .btn-primary {
+        background-color: #3498db;
+        border: none;
+    }
+
+    .btn-primary:hover {
+        background-color: #2980b9;
+    }
+
+    table {
+        background: rgba(255,255,255,0.1);
+        color: white;
+    }
+
+    table th, table td {
+        color: white;
+    }
+
+    table th {
+        background: rgba(0,0,0,0.4);
+    }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container">
+<div class="dashboard-container">
     <h2 class="my-4">Available Quizzes</h2>
     {% if available_quizzes %}
         <div class="list-group mb-5">
@@ -28,6 +86,7 @@
                 <tr>
                     <th>Quiz</th>
                     <th>Score</th>
+                    <th>Percentage</th>
                 </tr>
             </thead>
             <tbody>
@@ -35,6 +94,7 @@
                     <tr>
                         <td>{{ result.quiz_title }}</td>
                         <td>{{ result.correct_answers }} / {{ result.total_questions }}</td>
+                        <td>{{ result.percentage }}%</td>
                     </tr>
                 {% endfor %}
             </tbody>
@@ -42,5 +102,6 @@
     {% else %}
         <p>You have not completed any quizzes yet.</p>
     {% endif %}
+
 </div>
 {% endblock %}

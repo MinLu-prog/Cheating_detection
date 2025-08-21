@@ -1,12 +1,74 @@
+{% load static %}
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome</title>
+    <title>Welcome Page</title>
+    <style>
+        /* ===== style.css contents embedded ===== */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(to right, #2c3e50, #3498db);
+            color: white;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        .container {
+            background: rgba(0, 0, 0, 0.6);
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+            max-width: 600px;
+        }
+
+        .container img {
+            width: 120px;
+            height: auto;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        p {
+            font-size: 1.2rem;
+            margin-bottom: 30px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 25px;
+            margin: 10px;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            transition: 0.3s;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+        }
+    </style>
 </head>
 <body>
-    <h1>Welcome</h1>
-    <p>Login <a heref="/login">Here!</a></p>
+    <div class="container">
+        <img src="{% static 'images/miit-logo.jpg' %}" alt="MIIT Logo">
+        <h1>Welcome to MIIT Proctoring System</h1>
+        <p>Your secure online examination platform.</p>
+        <a href="{% url 'login' %}" class="btn">Login</a>
+        <a href="{% url 'register' %}" class="btn">Register</a>
+    </div>
 </body>
 </html>

@@ -1,40 +1,45 @@
-import subprocess
-import os
-import sys
-from django.http import HttpResponse
-
-def proctoring_launcher(request):
-    script_path = os.path.join(os.path.dirname(__file__), 'proctoring_runner.py')
-
-    # Use the Python interpreter from the current virtual environment
-    python_executable = sys.executable  # This points to .venv\Scripts\python.exe
-
-    try:
-        subprocess.Popen([python_executable, script_path])
-        return HttpResponse("✅ Proctoring test started. Look for a new window.")
-    except Exception as e:
-        return HttpResponse(f"❌ Error launching proctoring: {e}")
-
-from django.http import StreamingHttpResponse
+# views.py
+import base64
 import cv2
+import numpy as np
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from .ai_proctor import DetectionSystem
 
-def gen_frames():
-    cap = cv2.VideoCapture(0)
+# Initialize a single DetectionSystem instance (keep it running)
+ds = DetectionSystem(process_with_camera=False)  # We'll feed frames from browser
 
-    while True:
-        success, frame = cap.read()
-        if not success:
-            break
-        else:
-            # Resize frame for smaller display
-            frame = cv2.resize(frame, (200, 150))
+# -------------------- Receive frames from browser --------------------
+@csrf_exempt
+def quiz_ai_stream(request, quiz_id):
+    """
+    Accepts a base64 frame from browser and processes it.
+    Expects JSON: { "frame": "<base64_string>" }
+    """
+    if request.method == "POST":
+        data = request.POST.get("frame")
+        if data:
+            # Decode base64 image
+            header, encoded = data.split(",", 1)
+            img_bytes = base64.b64decode(encoded)
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-            # Encode frame
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
+            # Process frame with DetectionSystem
+            annotated_frame, _ = ds.process_frame(frame)
 
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            # Return annotated frame as base64
+            ret, buffer = cv2.imencode('.jpg', annotated_frame)
+            frame_b64 = base64.b64encode(buffer).decode('utf-8')
+            return JsonResponse({"frame": f"data:image/jpeg;base64,{frame_b64}"})
 
-def video_feed(request):
-    return StreamingHttpResponse(gen_frames(), content_type='multipart/x-mixed-replace; boundary=frame')
+    return JsonResponse({"error": "POST required"}, status=400)
+
+# -------------------- AI status polling --------------------
+def quiz_ai_status(request, quiz_id):
+    """
+    Returns current AI status for frontend polling.
+    Example: active alerts, total alerts, session duration.
+    """
+    status = ds.get_status()
+    return JsonResponse(status)

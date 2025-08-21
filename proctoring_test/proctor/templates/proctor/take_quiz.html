@@ -1,166 +1,195 @@
+{% extends 'base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>{{ quiz.title }} - Take Quiz</title>
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f8f9fa;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            max-width: 900px;
-            margin: auto;
-            background: #fff;
-            padding: 30px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-        h2 {
-            color: #343a40;
-            margin-bottom: 20px;
-        }
-        .question {
-            margin-bottom: 30px;
-        }
-        .question h4 {
-            margin-bottom: 10px;
-        }
-        .choice {
-            margin-bottom: 8px;
-        }
-        button {
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            font-size: 16px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        .note {
-            color: #6c757d;
-            margin-bottom: 30px;
-        }
 
-        /* Webcam top-right */
-        #webcam-preview {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            width: 160px;
-            height: 120px;
-            border: 2px solid #007bff;
-            border-radius: 8px;
-            overflow: hidden;
-            z-index: 1000;
-            background: black;
-        }
+{% block extra_css %}
+<style>
+.verification-modal {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    width: 250px;
+    height: 180px;
+    background: rgba(0, 0, 0, 0.8);
+    border: 2px solid #007bff;
+    border-radius: 10px;
+    z-index: 1000;
+    overflow: hidden;
+    cursor: move;
+}
+.verification-feed { width: 100%; height: 100%; object-fit: cover; }
+.fullscreen-warning {
+    position: fixed;
+    top:0; left:0; width:100%; height:100%;
+    background: rgba(0,0,0,0.95);
+    color:white; z-index:2000; display:none;
+    justify-content:center; align-items:center; flex-direction:column;
+    text-align:center;
+}
+.warning-modal { background:white; color:black; padding:20px; border-radius:10px; max-width:400px; }
+.alert-overlay { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; color:yellow; font-weight:bold; font-size:14px; padding:5px; }
+/* Resize Handles */
+.resize-handle { position:absolute; background:transparent; }
+.resize-handle.top, .resize-handle.bottom { height:8px; left:0; right:0; cursor:ns-resize; }
+.resize-handle.top { top:-4px; } .resize-handle.bottom { bottom:-4px; }
+.resize-handle.left, .resize-handle.right { width:8px; top:0; bottom:0; cursor:ew-resize; }
+.resize-handle.left { left:-4px; } .resize-handle.right { right:-4px; }
+.resize-handle.tl, .resize-handle.tr, .resize-handle.bl, .resize-handle.br { width:12px; height:12px; }
+.resize-handle.tl { top:-6px; left:-6px; cursor:nwse-resize; }
+.resize-handle.tr { top:-6px; right:-6px; cursor:nesw-resize; }
+.resize-handle.bl { bottom:-6px; left:-6px; cursor:nesw-resize; }
+.resize-handle.br { bottom:-6px; right:-6px; cursor:nwse-resize; }
+</style>
+{% endblock %}
 
-        #webcam-preview video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-    </style>
-</head>
-<body>
-<div class="container">
-    <h2>{{ quiz.title }}</h2>
-    <p class="note">Please answer all questions below and submit when finished.</p>
+{% block content %}
+<div class="verification-modal" id="verification-modal">
+    <img id="ai-feed" class="verification-feed" />
+    <div class="alert-overlay" id="alert-overlay"></div>
+</div>
 
-    <form method="post">
-        {% csrf_token %}
-        {% for question in questions %}
-            <div class="question">
-                <h4>Q{{ forloop.counter }}. {{ question.text }}</h4>
-                {% for choice in question.choices.all %}
-                    <div class="choice">
-                        <label>
-                            <input type="radio" name="question_{{ question.id }}" value="{{ choice.id }}">
-                            {{ choice.text }}
+<div class="fullscreen-warning" id="fullscreen-warning">
+    <div class="warning-modal">
+        <h2>⛔️ Exam Terminated</h2>
+        <p id="termination-reason">Exam monitoring failed</p>
+        <a href="{% url 'student_dashboard' %}" class="btn btn-danger mt-3">Return to Dashboard</a>
+    </div>
+</div>
+
+<div class="container mt-4" id="quiz-content">
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h3>{{ quiz.title }}</h3>
+            <p class="mb-0">Time remaining: <span id="timer">00:00</span></p>
+        </div>
+        <div class="card-body">
+            <form id="quiz-form" method="post">
+                {% csrf_token %}
+                {% for question in questions %}
+                <div class="question-container mb-4">
+                    <h5>Question {{ forloop.counter }}: {{ question.text }}</h5>
+                    {% for option in question.choices.all %}
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" 
+                               name="question_{{ question.id }}" 
+                               id="option_{{ option.id }}" 
+                               value="{{ option.id }}">
+                        <label class="form-check-label" for="option_{{ option.id }}">
+                            {{ option.text }}
                         </label>
                     </div>
+                    {% endfor %}
+                </div>
+                <hr>
                 {% endfor %}
-            </div>
-        {% endfor %}
-        <button type="submit">Submit Quiz</button>
-    </form>
+                <button type="submit" class="btn btn-success btn-lg" id="submit-btn">
+                    Submit Quiz
+                </button>
+            </form>
+        </div>
+    </div>
 </div>
-
-<!-- Webcam preview in top-right corner -->
-<div id="webcam-preview">
-    <video id="video" autoplay muted></video>
-</div>
-
-<!-- Hidden canvas for face capture -->
-<canvas id="canvas" style="display:none;"></canvas>
 
 <script>
-    // Get CSRF token from cookie
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
+const aiFeed = document.getElementById('ai-feed');
+const alertOverlay = document.getElementById('alert-overlay');
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+const quizForm = document.getElementById('quiz-form');
+const timerDisplay = document.getElementById('timer');
+
+let duration = {{ quiz.time_limit}} * 60;
+let timerInterval;
+let proctorStream;
+
+function startTimer() {
+    timerInterval = setInterval(() => {
+        const minutes = Math.floor(duration / 60);
+        const seconds = duration % 60;
+        timerDisplay.textContent = `${minutes.toString().padStart(2,'0')}:${seconds.toString().padStart(2,'0')}`;
+        if (duration <= 0) {
+            clearInterval(timerInterval);
+            submitQuiz();
         }
-        return cookieValue;
-    }
-    const csrftoken = getCookie('csrftoken');
+        duration--;
+    }, 1000);
+}
 
-    const video = document.getElementById('video');
-    const canvas = document.getElementById('canvas');
+async function startProctoring() {
+    try {
+        proctorStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const video = document.createElement('video');
+        video.srcObject = proctorStream;
+        video.play();
 
-    // Get webcam stream
-    navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => {
-            video.srcObject = stream;
-        })
-        .catch(err => {
-            alert("Webcam access denied. You cannot take the quiz.");
+        video.addEventListener('loadedmetadata', () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
         });
 
-    // Capture image and send to server for verification
-    function verifyFace() {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        canvas.getContext('2d').drawImage(video, 0, 0);
-        const imageData = canvas.toDataURL('image/jpeg');
+        const sendFrame = async () => {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const dataURL = canvas.toDataURL('image/jpeg');
 
-        fetch("{% url 'verify_face' %}", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrftoken
-            },
-            body: JSON.stringify({ image: imageData })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (!data.valid) {
-                alert("Face does not match your registered identity. You will be logged out.");
-                window.location.href = "{% url 'logout' %}";
+            try {
+                const res = await fetch("{% url 'webcam:quiz_ai_stream' quiz.id %}", {
+                    method: 'POST',
+                    headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: new URLSearchParams({ frame: dataURL })
+                });
+                const result = await res.json();
+                if (result.frame) aiFeed.src = result.frame;
+            } catch (err) {
+                console.error("Error sending frame:", err);
             }
-        })
-        .catch(err => console.error("Verification error:", err));
+        };
+
+        const pollStatus = async () => {
+            try {
+                const res = await fetch("{% url 'webcam:quiz_ai_status' quiz.id %}");
+                const status = await res.json();
+                if (status.terminated) {
+                    stopProctoring();
+                    document.getElementById('fullscreen-warning').style.display = 'flex';
+                    document.getElementById('termination-reason').textContent = status.reason || 'Exam monitoring failed';
+                    document.getElementById('quiz-content').style.display = 'none';
+                    clearInterval(timerInterval);
+                } else {
+                    const warnings = status.active_alerts || [];
+                    alertOverlay.innerHTML = warnings.map(w => `⚠️ ${w}`).join('<br>');
+                }
+            } catch (err) {
+                console.error("Error polling AI status:", err);
+            }
+        };
+
+        setInterval(sendFrame, 400);
+        setInterval(pollStatus, 500);
+
+    } catch (err) {
+        console.error("Camera access denied:", err);
+        alert("⚠️ Camera access denied. Allow camera and use HTTPS/localhost.");
     }
+}
 
-    // Start verifying face every 20 seconds
-    setInterval(verifyFace, 20000);
+function stopProctoring() {
+    if (proctorStream) {
+        proctorStream.getTracks().forEach(track => track.stop());
+    }
+}
+
+function submitQuiz() {
+    stopProctoring();
+    quizForm.submit();
+}
+
+quizForm.addEventListener('submit', (e) => {
+    // stop proctoring before actual form submit
+    stopProctoring();
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    startTimer();
+    startProctoring();
+});
 </script>
-
-</body>
-</html>
+{% endblock %}

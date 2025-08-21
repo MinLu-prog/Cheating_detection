@@ -1,11 +1,28 @@
 {% extends 'base.html' %}
 
-{% block title %}Capturing Face{% endblock %}
+{% block title %}Capture Started{% endblock %}
 
 {% block content %}
 <div class="container mt-5">
-    <h2>Capturing Face Data...</h2>
-    <p>A new window has opened. Please follow the instructions there to finish capturing your face.</p>
-    <a href="{% url 'student_dashboard' %}" class="btn btn-success mt-3">Done</a>
+    <h2>Face Capture Started</h2>
+    <p>Please follow the instructions in the terminal/OpenCV window to capture your face.</p>
+    <a href="{% url 'student_dashboard' %}" class="btn btn-success mt-3" id="doneBtn">Done</a>
 </div>
+
+<script>
+const doneBtn = document.getElementById('doneBtn');
+doneBtn.disabled = true;  // Disable initially
+
+function checkFile() {
+    fetch("{% url 'check_face_file' %}")
+        .then(response => response.json())
+        .then(data => {
+            if(data.exists) doneBtn.disabled = false;
+        })
+        .catch(err => console.error(err));
+}
+
+// Check every 2 seconds
+setInterval(checkFile, 2000);
+</script>
 {% endblock %}
