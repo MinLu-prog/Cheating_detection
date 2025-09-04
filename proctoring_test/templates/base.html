@@ -3,178 +3,116 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Proctor System | {% block title %}{% endblock %}</title>
+    <title>MIIT | {% block title %}{% endblock %}</title>
 
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
 
-    <!-- Font Awesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- FontAwesome (for icons) -->
+    <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
 
-    <!-- Custom CSS -->
+    <!-- Custom Animations -->
     <style>
-        :root {
-            --primary: #4e73df;
-            --secondary: #858796;
-            --success: #1cc88a;
-            --info: #36b9cc;
-            --warning: #f6c23e;
-            --danger: #e74a3b;
-            --light: #f8f9fc;
-            --dark: #5a5c69;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-
-        body {
-            background: linear-gradient(to right, #2c3e50, #f126e3ff);
-            font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            min-height: 100vh;
-        }
-
-        .navbar {
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-            background-color: #000000 !important;
-        }
-
-        .card {
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(33, 40, 50, 0.15);
-            border: none;
-            border-radius: 0.35rem;
-            background-color: rgba(255, 255, 255, 0.95);
-        }
-
-        .card-header {
-            font-weight: 600;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
-            background-color: rgba(255, 255, 255, 0.98);
-        }
-
-        .table thead th {
-            border-top: none;
-            font-weight: 600;
-            text-transform: uppercase;
-            font-size: 0.85rem;
-            letter-spacing: 0.05em;
-            color: var(--secondary);
-        }
-
-        .badge {
-            font-weight: 500;
-            padding: 0.35em 0.65em;
-        }
-
-        .btn-sm {
-            padding: 0.25rem 0.5rem;
-            font-size: 0.875rem;
-        }
-        
-        /* Ensure content stands out against the gradient background */
-        .container {
-            background-color: transparent;
-        }
-        
-        .alert {
-            box-shadow: 0 0.15rem 1.75rem 0 rgba(0, 0, 0, 0.1);
+        .animate-fadeIn {
+            animation: fadeIn 0.8s forwards;
         }
     </style>
 
     {% block extra_css %}{% endblock %}
 </head>
-<body>
+<body class="min-h-screen flex bg-gradient-to-r from-white to-blue-400 text-gray-900">
 
 {% if user.is_authenticated %}
-<!-- Navigation -->
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow">
-    <div class="container">
-        <a class="navbar-brand" href="{% url 'teacher_dashboard' %}">
-            <i class="fas fa-graduation-cap me-2"></i>
-            Proctor System
-        </a>
-        <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-            <span class="navbar-toggler-icon"></span>
+<!-- ✅ Sidebar -->
+<aside id="sidebar" class="w-60 bg-black text-white flex flex-col shadow-lg transform transition-transform duration-300">
+    <!-- Logo -->
+    <div class="flex items-center justify-between px-6 h-16 border-b border-gray-700">
+        <span class="text-lg font-bold">MIIT</span>
+        <!-- Close button (for mobile) -->
+        <button id="closeSidebar" class="md:hidden text-white hover:text-gray-400">
+            <i class="fas fa-times"></i>
         </button>
-        <div class="collapse navbar-collapse" id="navbarNav">
-            <ul class="navbar-nav me-auto">
-                <li class="nav-item">
-                    <a class="nav-link active" href="{% url 'teacher_dashboard' %}">
-                        <i class="fas fa-tachometer-alt me-1"></i>
-                        Dashboard
-                    </a>
-                </li>
-                <li class="nav-item">
-                    <a class="nav-link" href="#">
-                        <i class="fas fa-question-circle me-1"></i>
-                        Quizzes
-                    </a>
-                </li>
-            </ul>
-            <ul class="navbar-nav ms-auto">
-                <li class="nav-item dropdown">
-                    <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
-                        <i class="fas fa-user-circle me-1"></i>
-                        {{ request.user.get_full_name|default:request.user.username }}
-                    </a>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item" href="#"><i class="fas fa-user me-2"></i> Profile</a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li>
-                            <a class="dropdown-item" href="{% url 'logout' %}">
-                                <i class="fas fa-sign-out-alt me-2"></i>
-                                Logout
-                            </a>
-                        </li>
-                    </ul>
-                </li>
-            </ul>
+    </div>
+
+    <!-- Nav Links -->
+    <nav class="flex-1 px-4 py-6 space-y-2">
+        <a href="{% url 'teacher_dashboard' %}" 
+           class="flex items-center px-3 py-2 rounded-lg hover:bg-gray-800 transition">
+            <i class="fas fa-tachometer-alt mr-2"></i> Dashboard
+        </a>
+        <a href="#" 
+           class="flex items-center px-3 py-2 rounded-lg hover:bg-gray-800 transition">
+            <i class="fas fa-question-circle mr-2"></i> Quizzes
+        </a>
+    </nav>
+
+    <!-- User Dropdown -->
+    <div class="border-t border-gray-700 p-4">
+        <div class="relative group">
+            <button class="w-full flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-800 transition">
+                <span>{{ request.user.get_full_name|default:request.user.username }}</span>
+                <i class="fas fa-chevron-down ml-2"></i>
+            </button>
+            <div class="absolute bottom-14 left-4 w-48 bg-white text-gray-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
+                <a href="#" class="block px-4 py-2 hover:bg-gray-100"><i class="fas fa-user mr-2"></i> Profile</a>
+                <div class="border-t"></div>
+                <a href="{% url 'logout' %}" class="block px-4 py-2 hover:bg-gray-100"><i class="fas fa-sign-out-alt mr-2"></i> Logout</a>
+            </div>
         </div>
     </div>
-</nav>
+</aside>
 {% endif %}
 
-<!-- Main Content -->
-<div class="container py-4">
-    {% if messages %}
-        {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        {% endfor %}
-    {% endif %}
+<!-- ✅ Main Content -->
+<div class="flex-1 flex flex-col">
+    <!-- Top bar -->
+    <header class="flex items-center justify-between bg-black text-white px-4 h-16 shadow-md md:hidden">
+        <button id="openSidebar" class="text-white hover:text-gray-400">
+            <i class="fas fa-bars"></i>
+        </button>
+        <h1 class="text-lg font-bold">MIIT</h1>
+    </header>
 
-    {% block content %}{% endblock %}
+    <main class="flex-1 p-6 overflow-y-auto">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="mb-4 px-4 py-3 rounded-lg shadow-md text-white 
+                    {% if message.tags == 'success' %} bg-green-500 
+                    {% elif message.tags == 'warning' %} bg-yellow-500 
+                    {% elif message.tags == 'error' or message.tags == 'danger' %} bg-red-500 
+                    {% else %} bg-blue-500 {% endif %} animate-fadeIn">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        {% block content %}{% endblock %}
+    </main>
 </div>
 
-{% if user.is_authenticated %}
-<!-- Footer - Remove or comment out this entire section to remove the copyright -->
-<!--
-<footer class="footer py-3 bg-light mt-auto">
-    <div class="container">
-        <div class="row align-items-center">
-            <div class="col-lg-6 text-lg-start text-center">
-                <span class="text-muted">&copy; {% now "Y" %} Proctor System. All rights reserved.</span>
-            </div>
-            <div class="col-lg-6 text-lg-end text-center">
-                <span class="text-muted">v1.0.0</span>
-            </div>
-        </div>
-    </div>
-</footer>
--->
-{% endif %}
-
-<!-- Bootstrap JS Bundle with Popper -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- Custom JS -->
+{% block extra_js %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl)
-        })
+    const sidebar = document.getElementById("sidebar");
+    const openSidebar = document.getElementById("openSidebar");
+    const closeSidebar = document.getElementById("closeSidebar");
+
+    // Hide sidebar on mobile by default
+    if (window.innerWidth < 768) {
+        sidebar.classList.add("-translate-x-full");
+    }
+
+    openSidebar?.addEventListener("click", () => {
+        sidebar.classList.remove("-translate-x-full");
+    });
+
+    closeSidebar?.addEventListener("click", () => {
+        sidebar.classList.add("-translate-x-full");
     });
 </script>
-
-{% block extra_js %}{% endblock %}
+{% endblock %}
 </body>
 </html>

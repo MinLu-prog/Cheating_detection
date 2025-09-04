@@ -6,68 +6,49 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Welcome Page</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="h-screen flex items-center justify-center bg-gradient-to-r from-white to-blue-400 text-white">
+
+    <div class="bg-gray-600 bg-opacity-60 p-10 rounded-2xl shadow-2xl max-w-xl w-full flex flex-col items-center space-y-6 text-center transform transition-all duration-500 hover:scale-105">
+        <img src="{% static 'images/miit-logo.png' %}" alt="MIIT Logo" class="w-32 h-auto mb-4 animate-bounce-slow">
+        <h1 class="text-4xl font-bold animate-fadeIn">Welcome to MIIT Proctoring System</h1>
+        <p class="text-lg animate-fadeIn animate-delay-100">Your secure online examination platform.</p>
+
+        <!-- Stacked Buttons -->
+        <div class="flex flex-col space-y-4 mt-4 w-full items-center">
+            <a href="{% url 'login' %}" 
+               class="px-6 py-3 bg-blue-400 hover:bg-blue-600 rounded-lg font-semibold transition transform hover:-translate-y-1 hover:scale-105 w-48 text-center">
+               Login
+            </a>
+            <a href="{% url 'admin' %}" 
+               class="px-6 py-3 bg-blue-400 hover:bg-blue-600 rounded-lg font-semibold transition transform hover:-translate-y-1 hover:scale-105 w-48 text-center">
+               Login to Admin
+            </a>
+        </div>
+    </div>
+
     <style>
-        /* ===== style.css contents embedded ===== */
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: Arial, sans-serif;
-            background: linear-gradient(to right, #2c3e50, #f126e3ff);
-            color: white;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            text-align: center;
+        /* Custom Tailwind Animations */
+        @keyframes bounce-slow {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-bounce-slow {
+            animation: bounce-slow 3s infinite;
         }
 
-        .container {
-            background: rgba(0, 0, 0, 0.6);
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
-            max-width: 600px;
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
-
-        .container img {
-            width: 120px;
-            height: auto;
-            margin-bottom: 20px;
+        .animate-fadeIn {
+            animation: fadeIn 1s forwards;
         }
-
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-        }
-
-        p {
-            font-size: 1.2rem;
-            margin-bottom: 30px;
-        }
-
-        .btn {
-            display: inline-block;
-            padding: 12px 25px;
-            margin: 10px;
-            background: #ea10d5ff;
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: bold;
-            transition: 0.3s;
-        }
-
-        .btn:hover {
-            background: #ea36d5ff;
+        .animate-delay-100 {
+            animation-delay: 0.3s;
         }
     </style>
-</head>
-<body>
-    <div class="container">
-        <img src="{% static 'images/miit-logo.jpg' %}" alt="MIIT Logo">
-        <h1>Welcome to MIIT Proctoring System</h1>
-        <p>Your secure online examination platform.</p>
-        <a href="{% url 'login' %}" class="btn">Login</a>
-    </div>
+
 </body>
 </html>

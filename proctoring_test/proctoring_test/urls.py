@@ -8,6 +8,7 @@ urlpatterns = [
     path('about/', views.about, name='about'),
     path('login/', views.login_view, name='login'),
     path('logout/', views.logout_view, name='logout'),
+    path('admin',views.admin_view,name= 'admin'),
 
     # Teacher URLs
     path('teacher_dashboard/', views.teacher_dashboard, name='teacher_dashboard'),
@@ -26,7 +27,6 @@ urlpatterns = [
 
     # Face capture
     path('verify-face/', views.verify_face, name='verify_face'),
-
     path('capture-face/', views.capture_face_view, name='capture_face'),
     path('capture_started/', views.capture_started, name='capture_started'),
     path('check_face_file/', views.check_face_file, name='check_face_file'),  # for Done button

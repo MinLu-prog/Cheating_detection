@@ -1,85 +1,95 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container">
-    <h2 class="my-4 text-white">Teacher Dashboard</h2>
-    
-    <!-- Quiz Creation Card -->
-    <div class="card mb-4">
-        <div class="card-header bg-dark text-white">  <!-- Changed bg-primary to bg-dark -->
-            <h5>Create New Quiz</h5>
-        </div>
-        <div class="card-body">
-            <a href="{% url 'create_quiz' %}" class="btn btn-dark">  <!-- Changed btn-success to btn-dark -->
-                <i class="fas fa-plus"></i> New Quiz
-            </a>
-        </div>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- Page Title -->
+    <h2 class="text-2xl font-bold text-white mb-4 animate-fadeIn">Teacher Dashboard</h2>
+
+    <!-- ✅ Quiz Creation Card -->
+    <div class="bg-white shadow-lg rounded-lg p-6 animate-fadeIn">
+        <h5 class="text-lg font-semibold text-gray-800 mb-4">Create New Quiz</h5>
+        <a href="{% url 'create_quiz' %}" 
+           class="inline-flex items-center px-4 py-2 bg-black text-white rounded-lg shadow hover:bg-gray-800 transition">
+            <i class="fas fa-plus mr-2"></i> New Quiz
+        </a>
     </div>
 
-    <!-- Your Quizzes Section -->
-    <div class="card">
-        <div class="card-header bg-dark text-white">  <!-- Changed bg-info to bg-dark -->
-            <h5>Your Quizzes</h5>
+    <!-- ✅ Your Quizzes Section -->
+    <div class="bg-white shadow-lg rounded-lg p-6 animate-fadeIn animate-delay-100">
+        <h5 class="text-lg font-semibold text-gray-800 mb-4">Your Quizzes</h5>
+
+        {% if quizzes %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm text-left border border-gray-200">
+                <thead class="bg-gray-900 text-white">
+                    <tr>
+                        <th class="px-4 py-2">Title</th>
+                        <th class="px-4 py-2">Status</th>
+                        <th class="px-4 py-2">Open Time</th>
+                        <th class="px-4 py-2">Close Time</th>
+                        <th class="px-4 py-2">Time Limit</th>
+                        <th class="px-4 py-2">Questions</th>
+                        <th class="px-4 py-2 text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for quiz in quizzes %}
+                    <tr class="border-t hover:bg-gray-50 transition">
+                        <td class="px-4 py-2 font-medium">{{ quiz.title }}</td>
+                        <td class="px-4 py-2">
+                            <span class="inline-block px-2 py-1 text-xs rounded bg-gray-800 text-white">
+                                {{ quiz.get_status_display }}
+                            </span>
+                        </td>
+                        <td class="px-4 py-2">{{ quiz.open_time|date:"M d, Y H:i" }}</td>
+                        <td class="px-4 py-2">{{ quiz.close_time|date:"M d, Y H:i" }}</td>
+                        <td class="px-4 py-2">{{ quiz.time_limit }} mins</td>
+                        <td class="px-4 py-2">{{ quiz.questions.count }}</td>
+                        <td class="px-4 py-2 text-center">
+                            <div class="flex justify-center space-x-2">
+
+                                <!-- View Results Button -->
+                                <a href="{% url 'teacher_quiz_results' quiz.id %}" 
+                                   class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition">
+                                    <i class="fas fa-eye mr-1"></i> View Results
+                                </a>
+
+                                <!-- Delete Button -->
+                                <form method="post" action="{% url 'delete_quiz' quiz.id %}" 
+                                      class="quiz-delete-form" data-quiz-id="{{ quiz.id }}">
+                                    {% csrf_token %}
+                                    <button type="submit" 
+                                            class="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded hover:bg-red-700 transition"
+                                            title="Delete">
+                                        <i class="fas fa-trash mr-1"></i> Delete
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
-        <div class="card-body">
-            {% if quizzes %}
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead class="thead-dark">  <!-- Changed thead-light to thead-dark -->
-                        <tr>
-                            <th>Title</th>
-                            <th>Status</th>
-                            <th>Open Time</th>
-                            <th>Close Time</th>
-                            <th>Time Limit</th>
-                            <th>Questions</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for quiz in quizzes %}
-                        <tr>
-                            <td>{{ quiz.title }}</td>
-                            <td>
-                                <span class="badge badge-dark">  <!-- Changed badge-success/badge-warning to badge-dark -->
-                                    {{ quiz.get_status_display }}
-                                </span>
-                            </td>
-                            <td>{{ quiz.open_time|date:"M d, Y H:i" }}</td>
-                            <td>{{ quiz.close_time|date:"M d, Y H:i" }}</td>
-                            <td>{{ quiz.time_limit }} mins</td>
-                            <td>{{ quiz.questions.count }}</td>
-                            <td>
-                                <div class="btn-group btn-group-sm">
-                                    <!-- View -->
-                                    <a href="{% url 'teacher_quiz_results' quiz.id %}" class="btn btn-outline-dark" title="View Results">  <!-- Changed btn-outline-primary to btn-outline-dark -->
-                                        <i class="fas fa-eye"></i>
-                                    </a>
-                                    <!-- Edit 
-                                    <a href="{% url 'edit_quiz' quiz.id %}" class="btn btn-outline-secondary" title="Edit">
-                                        <i class="fas fa-edit"></i>
-                                    </a>-->
-                                    <!-- Delete (POST form with CSRF token) -->
-                                    <form method="post" action="{% url 'delete_quiz' quiz.id %}" style="display:inline;">
-                                        {% csrf_token %}
-                                        <button type="submit" class="btn btn-outline-danger" title="Delete"
-                                                onclick="return confirm('Are you sure you want to delete this quiz?');">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="alert alert-dark">  <!-- Changed alert-info to alert-dark -->
-                You haven't created any quizzes yet. Click "New Quiz" to get started!
-            </div>
-            {% endif %}
+        {% else %}
+        <div class="p-4 bg-gray-100 text-gray-700 rounded-lg animate-fadeIn">
+            You haven't created any quizzes yet. Click <strong>"New Quiz"</strong> to get started!
         </div>
+        {% endif %}
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.querySelectorAll(".quiz-delete-form").forEach(form => {
+    form.addEventListener("submit", function(e) {
+        e.preventDefault();
+        const row = form.closest("tr");
+        row.classList.add("animate-fadeOut");
+        setTimeout(() => form.submit(), 700); // wait for fade out
+    });
+});
+</script>
 {% endblock %}

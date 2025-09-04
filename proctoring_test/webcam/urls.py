@@ -10,7 +10,6 @@ urlpatterns = [
 
     # AI Proctoring status endpoint for polling
     path('quiz/<int:quiz_id>/ai_status/', views.quiz_ai_status, name='quiz_ai_status'),
-
     #path('quiz/<int:quiz_id>/ai_frame/', views.quiz_ai_frame_annotated, name='quiz_ai_frame_annotated')
 
 ]

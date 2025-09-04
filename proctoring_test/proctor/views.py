@@ -17,6 +17,7 @@ import sys
 from .utils import is_teacher, is_student
 from .verify_face import verify_face_from_base64
 import time
+from django.shortcuts import redirect
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,9 @@ def logout_view(request):
         logout(request)
         messages.success(request, 'You have been logged out.')
         return redirect('home')
+
+def admin_view(request) :
+        return redirect('/admin/')
 
 # Dashboards
 @login_required
@@ -531,7 +535,7 @@ from django.contrib.auth.decorators import login_required
 from django.urls import reverse
 
 # Toggle face recognition on/off
-FACE_RECOGNITION_ENABLED = False  # Set to True to enable recognition again
+FACE_RECOGNITION_ENABLED = True  # Set to True to enable recognition again
 
 # ----------------- Improved KNN Helper with distance -----------------
 def distance(v1, v2):
@@ -565,7 +569,7 @@ def _load_face_dataset():
         current_time - _last_cache_time < CACHE_TIMEOUT):
         return _face_dataset_cache, _labels_cache, _names_cache, _trainset_cache, _dynamic_threshold
     
-    dataset_path = os.path.join(settings.BASE_DIR, 'Real-time-Face-Recognition-Project', 'face_dataset')
+    dataset_path = r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project\face_dataset"
     face_data, labels, names, class_id = [], [], {}, 0
 
     if not os.path.exists(dataset_path):
@@ -768,13 +772,7 @@ def _handle_face_mismatch(request, reason, distance_value):
             'distance': float(distance_value)
         })
 
-import os
-import subprocess
-import sys
-from django.shortcuts import render, redirect
-from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from django.http import JsonResponse
+
 
 # ---- Start capture face ----
 import os
@@ -793,7 +791,7 @@ def capture_face_view(request):
         return redirect('home')
 
     # Dataset folder path (must match face_data.py)
-    dataset_path = r"C:\Users\User\Desktop\Special project\proctoring_test\Real-time-Face-Recognition-Project\face_dataset"
+    dataset_path = r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project\face_dataset"
     os.makedirs(dataset_path, exist_ok=True)
 
     # Path to this user's dataset file
@@ -806,13 +804,13 @@ def capture_face_view(request):
 
     if request.method == 'POST':
         # Absolute path to face_data.py
-        script_path = r"C:\Users\User\Desktop\Special project\proctoring_test\Real-time-Face-Recognition-Project\face_data.py"
+        script_path = r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project\face_data.py"
 
         try:
             # Launch script in a new console window (Windows)
             subprocess.Popen(
                 [sys.executable, script_path, user.username],
-                cwd=r"C:\Users\User\Desktop\Special project\proctoring_test\Real-time-Face-Recognition-Project",
+                cwd=r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project",
                 creationflags=subprocess.CREATE_NEW_CONSOLE
             )
             messages.success(request, "Face capture started! Please follow the instructions in the new window.")
@@ -834,7 +832,7 @@ def capture_started_view(request):
 @login_required
 def check_face_file(request):
     user = request.user
-    dataset_file = r"C:\Users\User\Desktop\Special project\proctoring_test\Real-time-Face-Recognition-Project\face_dataset" + f"\\{user.username}.npy"
+    dataset_file = r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project\face_dataset" + f"\\{user.username}.npy"
     exists = os.path.exists(dataset_file)
     return JsonResponse({'exists': exists})
 
