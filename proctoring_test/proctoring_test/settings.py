@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'webcam',
     'tailwind',
+    "lucide",
     'theme'
 ]
 
@@ -67,6 +68,10 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
             ],
+            'builtins': [
+                "lucide.templatetags.lucide",
+            ]
+
         },
     },
 ]

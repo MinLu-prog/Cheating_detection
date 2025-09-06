@@ -83,9 +83,39 @@ def login_view(request):
         return redirect('home')
 
     return render(request, 'proctor/login.html')
+@login_required
+def profile(request):
+    # Determine role from groups
+    role = "User"
+    if request.user.groups.filter(name="Teachers").exists():
+        role = "Teacher"
+        # Fetch quizzes that belong to the logged-in teacher (same as teacher_dashboard)
+        user_quizzes = Quiz.objects.filter(teacher=request.user).order_by('-created_at')
+        # Calculate statistics
+        published_count = user_quizzes.filter(status='published').count()
+    elif request.user.groups.filter(name="Students").exists():
+        role = "Student"
+        # For students, we might want to show quizzes they've taken or are available to them
+        user_quizzes = Quiz.objects.none()  # Empty queryset for now
+        published_count = 0
+    elif request.user.groups.filter(name="Admins").exists():
+        role = "Admin"
+        # For admins, show all quizzes
+        user_quizzes = Quiz.objects.all().order_by('-created_at')
+        published_count = user_quizzes.filter(status='published').count()
+    else:
+        user_quizzes = Quiz.objects.none()  # Empty queryset for regular users
+        published_count = 0
 
-
+    context = {
+        "user_quizzes": user_quizzes,
+        "published_count": published_count,
+        "role": role,
+        "now": timezone.now()  # Add current time like teacher_dashboard
+    }
+    return render(request, "proctor/profile.html", context)
  #Logout view
+@login_required
 def logout_view(request):
         logger.info(f"User {request.user.username} logged out")
         logout(request)
@@ -893,10 +923,10 @@ def delete_quiz(request, quiz_id):
         quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
         quiz.delete()
         messages.success(request, f'Quiz "{quiz.title}" has been deleted.')
-        return redirect('teacher_dashboard')
+        return redirect('profile')
     else:
         messages.warning(request, 'Invalid request method.')
-        return redirect('teacher_dashboard')
+        return redirect('profile')
 
 from django.shortcuts import get_object_or_404, redirect
 from .models import Quiz

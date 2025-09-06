@@ -1,43 +1,53 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="container">
-    <div class="card mb-4">
-        <div class="card-header bg-dark text-white">
-            <h2>Results for "{{ quiz.title }}"</h2>
-        </div>
-        <div class="card-body">
-            {% for student, data in student_results.items %}
-            <div class="card mb-3">
-                <div class="card-header bg-dark text-white">
-                    <h3 class="mb-0">{{ student.username }}</h3>
-                </div>
-                <div class="card-body">
-                    <p><strong>Score:</strong> {{ data.score }} / {{ data.total }}</p>
+<div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
-                    <h4>Answer Breakdown:</h4>
-                    <ul class="list-group">
-                        {% for ans in data.answers %}
-                        <li class="list-group-item">
-                            <strong>Q:</strong> {{ ans.question }}<br>
-                            <strong>Student Answer:</strong> {{ ans.selected }}<br>
-                            <strong>Correct Answer:</strong> {{ ans.correct_answer }}<br>
-                            {% if ans.correct %}
-                            <span class="text-success">✅ Correct</span>
-                            {% else %}
-                            <span class="text-danger">❌ Wrong</span>
-                            {% endif %}
-                        </li>
-                        {% endfor %}
-                    </ul>
-                </div>
+    <!-- ✅ Page Title -->
+    <div class="bg-white shadow-lg rounded-lg p-6 animate-fadeIn">
+        <h2 class="text-xl font-bold text-gray-800">
+            Results for "{{ quiz.title }}"
+        </h2>
+    </div>
+
+    <!-- ✅ Student Results -->
+    <div class="bg-white shadow-lg rounded-lg p-6 animate-fadeIn animate-delay-100">
+        {% for student, data in student_results.items %}
+        <div class="bg-gray-50 shadow rounded-lg mb-6 overflow-hidden animate-fadeIn">
+            <div class="bg-gray-900 text-white px-4 py-2">
+                <h3 class="text-lg font-semibold">{{ student.username }}</h3>
             </div>
-            {% empty %}
-            <div class="alert alert-dark">
-                <p class="mb-0">No student has attempted this quiz yet.</p>
+            <div class="p-4 space-y-4">
+                <p class="text-gray-700">
+                    <strong>Score:</strong> {{ data.score }} / {{ data.total }}
+                </p>
+
+                <h4 class="text-gray-800 font-medium">Answer Breakdown:</h4>
+                <ul class="space-y-3">
+                    {% for ans in data.answers %}
+                    <li class="p-4 rounded-lg border border-gray-200 bg-white">
+                        <p class="text-sm"><strong>Q:</strong> {{ ans.question }}</p>
+                        <p class="text-sm"><strong>Student Answer:</strong> {{ ans.selected }}</p>
+                        <p class="text-sm"><strong>Correct Answer:</strong> {{ ans.correct_answer }}</p>
+                        {% if ans.correct %}
+                        <span class="inline-block mt-2 px-2 py-1 text-xs font-semibold text-green-700 bg-green-100 rounded">
+                            ✅ Correct
+                        </span>
+                        {% else %}
+                        <span class="inline-block mt-2 px-2 py-1 text-xs font-semibold text-red-700 bg-red-100 rounded">
+                            ❌ Wrong
+                        </span>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
             </div>
-            {% endfor %}
         </div>
+        {% empty %}
+        <div class="p-4 bg-gray-100 text-gray-700 rounded-lg animate-fadeIn">
+            No student has attempted this quiz yet.
+        </div>
+        {% endfor %}
     </div>
 </div>
 {% endblock %}

@@ -4,7 +4,6 @@
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-6">
 
     <!-- Page Title -->
-    <h2 class="text-2xl font-bold text-white mb-4 animate-fadeIn">Teacher Dashboard</h2>
 
     <!-- ✅ Quiz Creation Card -->
     <div class="bg-white shadow-lg rounded-lg p-6 animate-fadeIn">
@@ -51,7 +50,7 @@
 
                                 <!-- View Results Button -->
                                 <a href="{% url 'teacher_quiz_results' quiz.id %}" 
-                                   class="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded hover:bg-blue-700 transition">
+                                   class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition">
                                     <i class="fas fa-eye mr-1"></i> View Results
                                 </a>
 
@@ -91,5 +90,32 @@ document.querySelectorAll(".quiz-delete-form").forEach(form => {
         setTimeout(() => form.submit(), 700); // wait for fade out
     });
 });
+  document.addEventListener("DOMContentLoaded", () => {
+    const tabs = document.querySelectorAll(".tab-link");
+    const contents = document.querySelectorAll(".tab-content");
+
+    tabs.forEach(tab => {
+      tab.addEventListener("click", e => {
+        e.preventDefault();
+
+        // remove active styles from all tabs
+        tabs.forEach(t => t.classList.remove("text-green-600", "border-green-500"));
+        tabs.forEach(t => t.classList.add("hover:border-green-500"));
+
+        // hide all content
+        contents.forEach(c => c.classList.add("hidden"));
+        contents.forEach(c => c.classList.remove("block"));
+
+        // activate clicked tab
+        tab.classList.add("text-green-600", "border-b-2", "border-green-500");
+        tab.classList.remove("hover:border-green-500");
+
+        // show corresponding content
+        const target = tab.getAttribute("data-tab");
+        document.querySelector(`[data-content="${target}"]`).classList.remove("hidden");
+        document.querySelector(`[data-content="${target}"]`).classList.add("block");
+      });
+    });
+  });
 </script>
 {% endblock %}
