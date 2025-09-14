@@ -1,107 +1,80 @@
-{% extends 'base.html' %}
+{% extends 'base_student.html' %}
 {% load static %}
-{% block title %}Student Dashboard{% endblock %}
-
-{% block extra_css %}
-<style>
-    body {
-        margin: 0;
-        background: linear-gradient(to right, #2c3e50, #f126e3ff); /* same gradient as welcome & login */
-        min-height: 100vh;
-    }
-
-    .dashboard-container {
-        background: rgba(0, 0, 0, 0.7); /* semi-transparent dark card like welcome page */
-        color: white;
-        padding: 30px;
-        border-radius: 15px;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.5);
-        max-width: 900px;
-        margin: 50px auto;
-    }
-
-    .dashboard-container h2 {
-        color: #fff;
-    }
-
-    .list-group-item {
-        background: rgba(255,255,255,0.1);
-        color: white;
-        border: none;
-        border-radius: 8px;
-        margin-bottom: 10px;
-    }
-
-    .list-group-item h5 {
-        color: #fff;
-    }
-
-    .btn-primary {
-        background-color: #3498db;
-        border: none;
-    }
-
-    .btn-primary:hover {
-        background-color: #2980b9;
-    }
-
-    table {
-        background: rgba(255,255,255,0.1);
-        color: white;
-    }
-
-    table th, table td {
-        color: white;
-    }
-
-    table th {
-        background: rgba(0,0,0,0.4);
-    }
-</style>
-{% endblock %}
 
 {% block content %}
-<div class="dashboard-container">
-    <h2 class="my-4">Available Quizzes</h2>
-    {% if available_quizzes %}
-        <div class="list-group mb-5">
-            {% for quiz in available_quizzes %}
-                <div class="list-group-item d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="mb-1">{{ quiz.title }}</h5>
-                        <small>Open: {{ quiz.open_time|date:"M d, Y H:i" }} — Close: {{ quiz.close_time|date:"M d, Y H:i" }}</small>
-                    </div>
-                    <a href="{% url 'take_quiz' quiz.id %}" class="btn btn-primary">Take Quiz</a>
+<div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+    <!-- Welcome Header -->
+    <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg p-6 shadow-lg animate-fadeIn">
+        <div class="flex items-center justify-between">
+            <div>
+                <h1 class="text-3xl font-bold mb-2">Welcome, {{ user.get_full_name|default:user.username }}!</h1>
+                <p class="text-blue-100">Track your quizzes and results</p>
+            </div>
+            <div class="hidden md:block">
+                <div class="bg-white/20 backdrop-blur-sm rounded-lg p-4">
+                    <div class="text-2xl font-bold">{{ now|date:"H:i" }}</div>
+                    <div class="text-sm opacity-90">{{ now|date:"M d, Y" }}</div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Available Quizzes -->
+    <div class="bg-white rounded-lg shadow-lg p-6 animate-fadeIn">
+        <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-semibold text-gray-800">Available Quizzes</h2>
+        </div>
+        {% if available_quizzes %}
+        <div class="space-y-4">
+            {% for quiz in available_quizzes %}
+            <div class="flex justify-between items-center border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow duration-300">
+                <div>
+                    <h3 class="font-semibold text-gray-800 mb-1">{{ quiz.title }}</h3>
+                    <p class="text-sm text-gray-600">
+                        Open: {{ quiz.open_time|date:"M d, Y H:i" }} — Close: {{ quiz.close_time|date:"M d, Y H:i" }}
+                    </p>
+                </div>
+                <a href="{% url 'take_quiz' quiz.id %}" 
+                   class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                    Take Quiz
+                </a>
+            </div>
             {% endfor %}
         </div>
-    {% else %}
-        <p>No quizzes are currently available.</p>
-    {% endif %}
+        {% else %}
+        <div class="text-center py-8 text-gray-500">No quizzes are currently available.</div>
+        {% endif %}
+    </div>
 
-    <h2 class="my-4">Your Results</h2>
-    {% if results %}
-        <table class="table table-bordered">
-            <thead>
-                <tr>
-                    <th>Quiz</th>
-                    <th>Score</th>
-                    <th>Percentage</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for result in results %}
+    <!-- Results -->
+    <div class="bg-white rounded-lg shadow-lg p-6 animate-fadeIn">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Your Results</h2>
+        {% if results %}
+        <div class="overflow-x-auto">
+            <table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">
+                <thead class="bg-gray-100">
                     <tr>
-                        <td>{{ result.quiz_title }}</td>
-                        <td>{{ result.correct_answers }} / {{ result.total_questions }}</td>
-                        <td>{{ result.percentage }}%</td>
+                        <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">Quiz</th>
+                        <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">Score</th>
+                        <th class="px-4 py-2 text-left text-sm font-medium text-gray-600">Percentage</th>
                     </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    {% else %}
-        <p>You have not completed any quizzes yet.</p>
-    {% endif %}
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    {% for result in results %}
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-4 py-2 text-gray-800">{{ result.quiz_title }}</td>
+                        <td class="px-4 py-2 text-gray-800">{{ result.correct_answers }} / {{ result.total_questions }}</td>
+                        <td class="px-4 py-2 text-gray-800">{{ result.percentage }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-8 text-gray-500">You have not completed any quizzes yet.</div>
+        {% endif %}
+    </div>
 
 </div>
 {% endblock %}

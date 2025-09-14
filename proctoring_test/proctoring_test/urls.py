@@ -24,13 +24,13 @@ urlpatterns = [
 
     # Webcam app
     path('webcam/', include('webcam.urls')),
-
     # Face capture
     path('verify-face/', views.verify_face, name='verify_face'),
     path('capture-face/', views.capture_face_view, name='capture_face'),
     path('capture_started/', views.capture_started, name='capture_started'),
     path('check_face_file/', views.check_face_file, name='check_face_file'),  # for Done button
     path('teacher/quiz/<int:quiz_id>/results/', views.teacher_quiz_results, name='teacher_quiz_results'),
+    path('teacher/results-overview/', views.results_overview, name='results_overview'),
 
     #path('quiz/<int:quiz_id>/', views.quiz_detail, name='quiz_detail'),
     path('quiz/<int:quiz_id>/edit/', views.edit_quiz, name='edit_quiz'),
@@ -45,4 +45,8 @@ urlpatterns = [
 path("profile/", views.profile, name="profile"),
     # AI Proctor status JSON endpoint
     path('quiz/<int:quiz_id>/ai_status/', views.quiz_ai_status, name='quiz_ai_status'),
+        path("quiz/<int:quiz_id>/results/", views.quiz_results, name="quiz_results"),
+         path("teachers/", views.teacher_list, name="teacher_list"),
+    path("students/", views.student_list, name="student_list"),
+      path('teacher/<int:quiz_id>/', views.proctor_logs, name='proctor_logs'),
 ]

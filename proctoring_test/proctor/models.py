@@ -48,25 +48,30 @@ class Quiz(models.Model):
         ]
 
 class Question(models.Model):
+    QUESTION_TYPES = [
+        ('mcq', 'Multiple Choice'),
+        ('tf', 'True/False'),
+        ('blank', 'Fill in the Blank'),
+        ('text', 'Written Answer'),
+        ('match', 'Matching'),
+        ('file', 'File Upload'),
+    ]
+
     quiz = models.ForeignKey(
-        Quiz, 
-        related_name='questions', 
-        on_delete=models.CASCADE,
-        db_index=True
+        Quiz, related_name='questions', on_delete=models.CASCADE, db_index=True
     )
     text = models.TextField()
-    points = models.PositiveIntegerField(
-        default=1,
-        validators=[MinValueValidator(1)]
-    )
+    points = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
     order = models.PositiveIntegerField(default=0)
+    section = models.CharField(max_length=100, default='Default', blank=True)
+    question_type = models.CharField(max_length=10, choices=QUESTION_TYPES, default='mcq')
 
     def __str__(self):
-        return f"Q{self.order}: {self.text[:50]}..." 
+        return f"[{self.get_question_type_display()}] Q{self.order}: {self.text[:50]}..."
 
     class Meta:
         ordering = ['order']
-        unique_together = [('quiz', 'order')]  # Ensure order is unique per quiz
+        unique_together = [('quiz', 'order')]
 
 class Choice(models.Model):
     question = models.ForeignKey(
@@ -88,31 +93,42 @@ class Choice(models.Model):
 
 class StudentResponse(models.Model):
     student = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='quiz_responses',
-        limit_choices_to={'groups__name': 'Students'}  # Only students can have responses
+        User, on_delete=models.CASCADE, related_name='quiz_responses',
+        limit_choices_to={'groups__name': 'Students'}
     )
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='responses')
     question = models.ForeignKey(Question, on_delete=models.CASCADE)
-    selected_choice = models.ForeignKey(Choice, on_delete=models.CASCADE)
+
+    # Different possible answer types:
+    selected_choice = models.ForeignKey(Choice, null=True, blank=True, on_delete=models.SET_NULL)
+    text_answer = models.TextField(blank=True, null=True)
+    matched_pairs = models.JSONField(blank=True, null=True)  # e.g. {"left1":"right2", "left2":"right1"}
+    uploaded_file = models.FileField(upload_to='quiz_uploads/', blank=True, null=True)
+
     submitted_at = models.DateTimeField(auto_now_add=True)
-    is_correct = models.BooleanField(default=False)  # Cache whether answer was correct
+    is_correct = models.BooleanField(default=False)
 
     class Meta:
         unique_together = [['student', 'question']]
-        indexes = [
-            models.Index(fields=['student', 'quiz']),  # Better query performance
-        ]
+        indexes = [models.Index(fields=['student', 'quiz'])]
 
     def save(self, *args, **kwargs):
-        # Automatically set is_correct based on choice
-        self.is_correct = self.selected_choice.is_correct
+        # Auto-grade simple cases
+        if self.question.question_type in ['mcq', 'tf'] and self.selected_choice:
+            self.is_correct = self.selected_choice.is_correct
+        elif self.question.question_type == 'blank' and self.text_answer:
+            corrects = [ans.correct_text.lower().strip() for ans in self.question.blank_answers.all()]
+            self.is_correct = self.text_answer.lower().strip() in corrects
+        elif self.question.question_type == 'match' and self.matched_pairs:
+            correct_pairs = {pair.left_text: pair.right_text for pair in self.question.matching_pairs.all()}
+            self.is_correct = self.matched_pairs == correct_pairs
+        else:
+            # text/file = manual grading
+            self.is_correct = False
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f"{self.student.username}'s answer to Q{self.question.order} ({'Correct' if self.is_correct else 'Incorrect'})"
-
+        return f"{self.student.username} → Q{self.question.order} ({self.question.get_question_type_display()})"
 
 # --------------------- NEW: QuizResult / QuizAttempt ---------------------
 class QuizResult(models.Model):
@@ -142,3 +158,43 @@ class QuizResult(models.Model):
 
     def __str__(self):
         return f"{self.student.username} - {self.quiz.title} - {self.percent:.1f}%"
+
+class BlankAnswer(models.Model):
+    question = models.ForeignKey(Question, related_name='blank_answers', on_delete=models.CASCADE)
+    correct_text = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"Blank answer for Q{self.question.id}: {self.correct_text}"
+
+
+class MatchingPair(models.Model):
+    question = models.ForeignKey(Question, related_name='matching_pairs', on_delete=models.CASCADE)
+    left_text = models.CharField(max_length=255)
+    right_text = models.CharField(max_length=255)
+
+    def __str__(self):
+        return f"{self.left_text} ↔ {self.right_text}"
+
+from django.conf import settings 
+class ProctorEvent(models.Model):
+    SEVERITY = (('info','Info'), ('warn','Warn'), ('error','Error'))
+
+    quiz      = models.ForeignKey('Quiz', on_delete=models.CASCADE, related_name='proctor_events')
+    student   = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='proctor_events')
+    event_type = models.CharField(max_length=50, db_index=True)  # e.g. multi_face, no_face, phone, head_pose, eye_gaze, terminated, stream_error
+    severity   = models.CharField(max_length=10, choices=SEVERITY, default='warn')
+    message    = models.TextField(blank=True)
+    metadata   = models.JSONField(default=dict, blank=True)
+    # Optional snapshot (needs Pillow + MEDIA_* configured)
+    frame      = models.ImageField(upload_to='proctor_snaps/%Y/%m/%d', null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['quiz', 'student', 'event_type', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M:%S} · {self.student} · {self.event_type}"

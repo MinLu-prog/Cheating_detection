@@ -3,51 +3,132 @@
 
 {% block extra_css %}
 <style>
-/* existing styles unchanged */
+.verification-modal {
+    position: fixed; top: 10px; right: 10px; width: 250px; height: 180px;
+    background: rgba(0, 0, 0, 0.8); border: 2px solid #3b82f6; border-radius: 10px;
+    z-index: 1000; overflow: hidden; cursor: move;
+}
+.verification-feed { width: 100%; height: 100%; object-fit: cover; }
+.fullscreen-warning {
+    position: fixed; top:0; left:0; width:100%; height:100%;
+    background: rgba(0,0,0,0.95); color:white; z-index:2000; display:none;
+    justify-content:center; align-items:center; flex-direction:column;
+    text-align:center;
+}
+.warning-modal { background:white; color:black; padding:20px; border-radius:10px; max-width:400px; }
+.alert-overlay { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; color:yellow; font-weight:bold; font-size:14px; padding:5px; }
+.debug-line { font-size: 12px; color: red; margin-top: 4px; }
 </style>
 {% endblock %}
 
 {% block content %}
+<!-- Proctoring Window -->
 <div class="verification-modal" id="verification-modal">
-    <video id="proctor-video" autoplay muted class="verification-feed"></video>
+    <img id="ai-feed" class="verification-feed" />
     <div class="alert-overlay" id="alert-overlay"></div>
 </div>
 
+<!-- Termination Modal -->
 <div class="fullscreen-warning" id="fullscreen-warning">
     <div class="warning-modal">
-        <h2>⛔️ Exam Terminated</h2>
+        <h2 class="text-xl font-bold mb-2">⛔ Exam Terminated</h2>
         <p id="termination-reason">Exam monitoring failed</p>
-        <a href="{% url 'student_dashboard' %}" class="btn btn-danger mt-3">Return to Dashboard</a>
+        <a href="{% url 'student_dashboard' %}" class="mt-4 inline-block px-4 py-2 bg-red-600 text-white rounded-lg">Return to Dashboard</a>
     </div>
 </div>
 
-<div class="container mt-4" id="quiz-content">
-    <div class="card">
-        <div class="card-header bg-primary text-white">
-            <h3>{{ quiz.title }}</h3>
-            <p class="mb-0">Time remaining: <span id="timer">00:00</span></p>
+<!-- Quiz Content -->
+<div class="max-w-4xl mx-auto mt-6" id="quiz-content">
+    <div class="bg-white shadow-lg rounded-lg">
+        <div class="bg-blue-600 text-white px-6 py-4 flex justify-between items-center rounded-t-lg">
+            <h3 class="text-lg font-semibold">{{ quiz.title }}</h3>
+            <p class="text-sm">⏱ Time remaining: <span id="timer">00:00</span></p>
         </div>
-        <div class="card-body">
-            <form id="quiz-form" method="post">
+        <div class="p-6">
+            <form id="quiz-form" method="post" class="space-y-6">
                 {% csrf_token %}
                 {% for question in questions %}
-                <div class="question-container mb-4">
-                    <h5>Question {{ forloop.counter }}: {{ question.text }}</h5>
-                    {% for option in question.choices.all %}
-                    <div class="form-check">
-                        <input class="form-check-input" type="radio" 
-                               name="question_{{ question.id }}" 
-                               id="option_{{ option.id }}" 
-                               value="{{ option.id }}">
-                        <label class="form-check-label" for="option_{{ option.id }}">
-                            {{ option.text }}
+                <div class="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                    <h5 class="text-lg font-medium text-gray-800 mb-3">
+                        Question {{ forloop.counter }}: {{ question.text }}
+                    </h5>
+
+                    <!-- 🔍 DEBUG INFO -->
+                    <p class="debug-line">
+                        [DEBUG] id={{ question.id }} | type={{ question.question_type }} | 
+                        choices={{ question.choices.count }} | 
+                        matching_pairs={{ question.matching_pairs.count }}
+                    </p>
+
+                    <!-- Multiple Choice -->
+                    {% if question.question_type == "multiple" %}
+                        {% for option in question.choices.all %}
+                        <label class="flex items-center space-x-3 mb-2 cursor-pointer">
+                            <input type="radio" 
+                                   name="question_{{ question.id }}" 
+                                   id="option_{{ option.id }}" 
+                                   value="{{ option.id }}" 
+                                   class="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500">
+                            <span class="text-gray-700">{{ option.text }}</span>
                         </label>
-                    </div>
-                    {% endfor %}
+                        {% endfor %}
+
+                    <!-- True/False -->
+                    {% elif question.question_type == "truefalse" %}
+                        {% for option in question.choices.all %}
+                        <label class="flex items-center space-x-3 mb-2 cursor-pointer">
+                            <input type="radio" 
+                                   name="question_{{ question.id }}" 
+                                   id="option_{{ option.id }}" 
+                                   value="{{ option.id }}" 
+                                   class="w-4 h-4 text-green-600 border-gray-300 focus:ring-green-500">
+                            <span class="text-gray-700">{{ option.text }}</span>
+                        </label>
+                        {% endfor %}
+
+                    <!-- Fill in the Blank -->
+                    {% elif question.question_type == "fill" %}
+                        <input type="text" 
+                               name="question_{{ question.id }}" 
+                               placeholder="Type your answer here" 
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring focus:ring-blue-200">
+
+                    <!-- Matching -->
+                    {% elif question.question_type == "match" or question.question_type == "matching" %}
+                        <div class="relative flex justify-between gap-12 p-4 bg-white border rounded-lg matching-container" data-question-id="{{ question.id }}">
+                            <svg class="absolute top-0 left-0 w-full h-full match-svg pointer-events-none"></svg>
+
+                            <!-- Left Column -->
+                            <div class="flex flex-col gap-4 w-1/2">
+                                {% for pair in question.matching_pairs.all %}
+                                <div class="match-item left-item px-4 py-2 bg-gray-100 rounded-lg shadow cursor-pointer hover:bg-indigo-100 transition" data-index="{{ forloop.counter0 }}">
+                                    {{ pair.left_text }}
+                                </div>
+                                {% empty %}
+                                <p class="debug-line">[DEBUG] No left pairs found!</p>
+                                {% endfor %}
+                            </div>
+
+                            <!-- Right Column -->
+                            <div class="flex flex-col gap-4 w-1/2">
+                                {% for pair in question.matching_pairs.all %}
+                                <div class="match-item right-item px-4 py-2 bg-gray-100 rounded-lg shadow cursor-pointer hover:bg-indigo-100 transition" data-index="{{ forloop.counter0 }}">
+                                    {{ pair.right_text }}
+                                </div>
+                                {% empty %}
+                                <p class="debug-line">[DEBUG] No right pairs found!</p>
+                                {% endfor %}
+                            </div>
+
+                            <!-- Hidden input for storing JSON mapping -->
+                            <input type="hidden" name="question_{{ question.id }}" value="" class="matching-answer">
+                        </div>
+                    {% endif %}
                 </div>
-                <hr>
                 {% endfor %}
-                <button type="submit" class="btn btn-success btn-lg" id="submit-btn">
+
+                <button type="submit" 
+                        class="block mx-auto px-6 py-3 text-lg font-semibold text-white bg-green-600 rounded-lg shadow hover:bg-green-700 transition">
                     Submit Quiz
                 </button>
             </form>
@@ -55,8 +136,8 @@
     </div>
 </div>
 
-<script>
-const video = document.getElementById('proctor-video');
+<script>// --- Timer & Proctoring ---
+const aiFeed = document.getElementById('ai-feed');
 const alertOverlay = document.getElementById('alert-overlay');
 const canvas = document.createElement('canvas');
 const ctx = canvas.getContext('2d');
@@ -67,7 +148,6 @@ let duration = {{ quiz.time_limit }} * 60;
 let timerInterval;
 let proctorStream;
 
-// =============== TIMER ===============
 function startTimer() {
     timerInterval = setInterval(() => {
         const minutes = Math.floor(duration / 60);
@@ -81,11 +161,12 @@ function startTimer() {
     }, 1000);
 }
 
-// =============== PROCTORING ===============
 async function startProctoring() {
     try {
         proctorStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const video = document.createElement('video');
         video.srcObject = proctorStream;
+        video.play();
 
         video.addEventListener('loadedmetadata', () => {
             canvas.width = video.videoWidth;
@@ -97,32 +178,35 @@ async function startProctoring() {
             const dataURL = canvas.toDataURL('image/jpeg');
 
             try {
-                const res = await fetch("{% url 'verify_face' %}", {
+                const res = await fetch("{% url 'webcam:quiz_ai_stream' quiz.id %}", {
                     method: 'POST',
-                    headers: {
-                        'X-CSRFToken': '{{ csrf_token }}',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ image: dataURL })
+                    headers: { 'X-CSRFToken': '{{ csrf_token }}' },
+                    body: new URLSearchParams({ frame: dataURL })
                 });
                 const result = await res.json();
-
-                if (!result.valid) {
-                    console.warn("⚠️ Face verification failed:", result.error);
-                    alertOverlay.innerHTML = `⚠️ ${result.error || 'Face not verified'}`;
-                    
-                    if (result.error?.includes("not registered") || result.error?.includes("Wrong user")) {
-                        terminateExam(result.error);
-                    }
-                } else {
-                    alertOverlay.innerHTML = `✅ Verified: ${result.username}<br>Confidence: ${(result.confidence*100).toFixed(1)}%`;
-                }
-            } catch (err) {
-                console.error("Error verifying face:", err);
-            }
+                if (result.frame) aiFeed.src = result.frame;
+            } catch (err) { console.error(err); }
         };
 
-        setInterval(sendFrame, 2000); // every 2 seconds
+        const pollStatus = async () => {
+            try {
+                const res = await fetch("{% url 'webcam:quiz_ai_status' quiz.id %}");
+                const status = await res.json();
+                if (status.terminated) {
+                    stopProctoring();
+                    document.getElementById('fullscreen-warning').style.display = 'flex';
+                    document.getElementById('termination-reason').textContent = status.reason || 'Exam monitoring failed';
+                    document.getElementById('quiz-content').style.display = 'none';
+                    clearInterval(timerInterval);
+                } else {
+                    const warnings = status.active_alerts || [];
+                    alertOverlay.innerHTML = warnings.map(w => `⚠️ ${w}`).join('<br>');
+                }
+            } catch (err) { console.error(err); }
+        };
+
+        setInterval(sendFrame, 400);
+        setInterval(pollStatus, 500);
 
     } catch (err) {
         console.error("Camera access denied:", err);
@@ -130,18 +214,8 @@ async function startProctoring() {
     }
 }
 
-function terminateExam(reason) {
-    stopProctoring();
-    document.getElementById('fullscreen-warning').style.display = 'flex';
-    document.getElementById('termination-reason').textContent = reason || 'Exam monitoring failed';
-    document.getElementById('quiz-content').style.display = 'none';
-    clearInterval(timerInterval);
-}
-
 function stopProctoring() {
-    if (proctorStream) {
-        proctorStream.getTracks().forEach(track => track.stop());
-    }
+    if (proctorStream) proctorStream.getTracks().forEach(track => track.stop());
 }
 
 function submitQuiz() {
@@ -150,9 +224,66 @@ function submitQuiz() {
 }
 
 quizForm.addEventListener('submit', () => stopProctoring());
-document.addEventListener('DOMContentLoaded', () => {
-    startTimer();
-    startProctoring();
+document.addEventListener('DOMContentLoaded', () => { startTimer(); startProctoring(); });
+
+// --- Matching Question Logic ---
+document.querySelectorAll('.matching-container').forEach(container => {
+    const svg = container.querySelector('.match-svg');
+    const leftItems = container.querySelectorAll('.left-item');
+    const rightItems = container.querySelectorAll('.right-item');
+    const answerInput = container.querySelector('.matching-answer');
+    let connections = [];
+    let activeLeft = null;
+
+    function updateLines() {
+        svg.innerHTML = '';
+        connections.forEach(conn => {
+            const leftEl = Array.from(leftItems).find(el => el.textContent.trim() === conn.left);
+            const rightEl = Array.from(rightItems).find(el => el.textContent.trim() === conn.right);
+            if (!leftEl || !rightEl) return;
+            const leftRect = leftEl.getBoundingClientRect();
+            const rightRect = rightEl.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const x1 = leftRect.right - containerRect.left;
+            const y1 = leftRect.top + leftRect.height/2 - containerRect.top;
+            const x2 = rightRect.left - containerRect.left;
+            const y2 = rightRect.top + rightRect.height/2 - containerRect.top;
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", x1);
+            line.setAttribute("y1", y1);
+            line.setAttribute("x2", x2);
+            line.setAttribute("y2", y2);
+            line.setAttribute("stroke", "blue");
+            line.setAttribute("stroke-width", "2");
+            svg.appendChild(line);
+        });
+        const mapping = {};
+        connections.forEach(c => { mapping[c.left] = c.right; });
+        answerInput.value = JSON.stringify(mapping);
+    }
+
+    leftItems.forEach(item => {
+        item.addEventListener('click', () => {
+            activeLeft = item;
+            leftItems.forEach(el => el.classList.remove("bg-indigo-200"));
+            item.classList.add("bg-indigo-200");
+        });
+    });
+
+    rightItems.forEach(item => {
+        item.addEventListener('click', () => {
+            if (!activeLeft) return;
+            const leftText = activeLeft.textContent.trim();
+            const rightText = item.textContent.trim();
+            connections = connections.filter(c => c.left !== leftText && c.right !== rightText);
+            connections.push({ left: leftText, right: rightText });
+            activeLeft = null;
+            leftItems.forEach(el => el.classList.remove("bg-indigo-200"));
+            updateLines();
+        });
+    });
+
+    window.addEventListener('resize', updateLines);
 });
 </script>
 {% endblock %}

@@ -5,44 +5,135 @@ import numpy as np
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from .ai_proctor import DetectionSystem
-
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+import base64, numpy as np, cv2, traceback
 # Initialize a single DetectionSystem instance (keep it running)
 ds = DetectionSystem(process_with_camera=False)  # We'll feed frames from browser
-
+from proctor.proctor_log import log_event
+from django.shortcuts import get_object_or_404
+from proctor.models import Quiz
 # -------------------- Receive frames from browser --------------------
+
 @csrf_exempt
 def quiz_ai_stream(request, quiz_id):
     """
     Accepts a base64 frame from browser and processes it.
-    Expects JSON: { "frame": "<base64_string>" }
+    Expects form field 'frame' containing a data URL (data:image/jpeg;base64,...).
     """
-    if request.method == "POST":
+    if request.method != "POST":
+        return JsonResponse({"error": "POST required"}, status=400)
+
+    # Must be authenticated to log against a student
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "auth_required"}, status=403)
+
+    quiz = get_object_or_404(Quiz, id=quiz_id)
+
+    try:
         data = request.POST.get("frame")
-        if data:
-            # Decode base64 image
-            header, encoded = data.split(",", 1)
-            img_bytes = base64.b64decode(encoded)
-            nparr = np.frombuffer(img_bytes, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if not data or "," not in data:
+            return JsonResponse({"error": "missing_or_invalid_frame"}, status=400)
 
-            # Process frame with DetectionSystem
-            annotated_frame, _ = ds.process_frame(frame)
+        # Decode base64 image (data URL)
+        _, encoded = data.split(",", 1)
+        img_bytes = base64.b64decode(encoded)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # BGR uint8
 
-            # Return annotated frame as base64
-            ret, buffer = cv2.imencode('.jpg', annotated_frame)
-            frame_b64 = base64.b64encode(buffer).decode('utf-8')
-            return JsonResponse({"frame": f"data:image/jpeg;base64,{frame_b64}"})
+        if frame is None:
+            # Log once per ~3s via throttle in log_event()
+            log_event(
+                request.user, quiz, "decode_error",
+                message="cv2.imdecode returned None",
+                severity="error",
+                metadata={"where": "quiz_ai_stream"},
+                frame_b64=data,
+            )
+            return JsonResponse({"error": "decode_failed"}, status=400)
 
-    return JsonResponse({"error": "POST required"}, status=400)
+        # Process frame with DetectionSystem
+        annotated_frame, meta = ds.process_frame(frame)  # meta may contain active_alerts/terminated/etc.
 
+        # Log active alerts (throttled)
+        if isinstance(meta, dict):
+            for code in meta.get("active_alerts", []):
+                log_event(
+                    request.user, quiz, code,
+                    message=f"Alert: {code}",
+                    severity="warn",
+                    metadata=meta,
+                )
+            # If detector decided to terminate, log as error (include a snapshot once)
+            if meta.get("terminated"):
+                log_event(
+                    request.user, quiz, "terminated",
+                    message=meta.get("reason", "terminated"),
+                    severity="error",
+                    metadata=meta,
+                    frame_b64=data,  # snapshot helps later review
+                )
+
+        # Return annotated frame as base64 (JPEG)
+        ok, buffer = cv2.imencode('.jpg', annotated_frame)
+        if not ok:
+            log_event(
+                request.user, quiz, "encode_error",
+                message="cv2.imencode failed",
+                severity="error",
+                metadata={"where": "quiz_ai_stream"},
+            )
+            return JsonResponse({"error": "encode_failed"}, status=500)
+
+        frame_b64 = base64.b64encode(buffer).decode('utf-8')
+        return JsonResponse({"frame": f"data:image/jpeg;base64,{frame_b64}"})
+
+    except Exception as e:
+        # Log unexpected server-side exception (throttled)
+        log_event(
+            request.user, quiz, "stream_error",
+            message=str(e),
+            severity="error",
+            metadata={"where": "quiz_ai_stream", "trace": traceback.format_exc()[:1500]},
+            frame_b64=request.POST.get("frame"),  # optional; safe due to throttle
+        )
+        return JsonResponse(
+            {"error": "server_exception", "detail": repr(e)},
+            status=500
+        )
 # -------------------- AI status polling --------------------
 def quiz_ai_status(request, quiz_id):
     """
     Returns current AI status for frontend polling.
-    Example: active alerts, total alerts, session duration.
+    Example keys: active_alerts, terminated, reason, etc.
     """
-    status = ds.get_status()
+    # If not authenticated we can't attach events to a student
+    if not request.user.is_authenticated:
+        return JsonResponse({"error": "auth_required"}, status=403)
+
+    quiz = get_object_or_404(Quiz, id=quiz_id)
+
+    status = ds.get_status() or {}
+
+    # Log current alerts (throttled, so polling won't spam)
+    for code in status.get("active_alerts", []):
+        log_event(
+            request.user, quiz, code,
+            message=f"Alert: {code}",
+            severity="warn",
+            metadata=status,
+        )
+
+    if status.get("terminated"):
+        log_event(
+            request.user, quiz, "terminated",
+            message=status.get("reason", "terminated"),
+            severity="error",
+            metadata=status,
+        )
+
     return JsonResponse(status)
+
 
 import os
 import time
@@ -57,7 +148,7 @@ from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 
 # Toggle face recognition on/off
-FACE_RECOGNITION_ENABLED = True  # Set to True to enable recognition again
+FACE_RECOGNITION_ENABLED = False  # Set to True to enable recognition again
 
 # ----------------- Improved KNN Helper with distance -----------------
 def distance(v1, v2):

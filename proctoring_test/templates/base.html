@@ -44,7 +44,7 @@
     <!-- Nav Links -->
     <nav class="flex-1 px-2 py-6 space-y-2 overflow-y-auto">
         <!-- Dashboard -->
-        <a href="{% url 'profile' %}" 
+        <a href="{% url 'teacher_dashboard' %}" 
            class="flex items-center px-3 py-2 rounded-lg hover:bg-gray-200 transition">
             {% lucide "notebook-pen" class="w-6 h-6" %}
             <span class="ml-2" x-show="!collapsed">Dashboard</span>
@@ -59,21 +59,24 @@
                     <span class="ml-2" x-show="!collapsed">Management</span>
                 </div>
                 <span x-show="!collapsed" 
-                      class="transition-transform duration-300" 
+                      class="transiti
+                      on-transform duration-300" 
                       :class="managementOpen ? 'rotate-90' : 'rotate-0'">
                     {% lucide "chevron-right" class="w-4 h-4" %}
                 </span>
             </button>
             <div x-show="managementOpen && !collapsed" class="ml-8 mt-2 space-y-2" x-cloak>
-                <a href="#" class="flex items-center px-3 py-2 hover:bg-gray-200">
-                    {% lucide "circle-help" class="w-5 h-5 mr-2" %} Quizzes
+                <a href="{% url 'create_quiz' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
+                    {% lucide "circle-help" class="w-5 h-5 mr-2" %} Create Quiz
                 </a>
-                <a href="#" class="flex items-center px-3 py-2 hover:bg-gray-200">
+                <a href="{% url 'results_overview' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
                     {% lucide "chart-bar" class="w-5 h-5 mr-2" %} Results
                 </a>
-                <a href="#" class="flex items-center px-3 py-2 hover:bg-gray-200">
-                    {% lucide "list" class="w-5 h-5 mr-2" %} Logs
-                </a>
+       {% if quiz %}
+            <a href="{% url 'proctor_logs' quiz.id %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
+                {% lucide "list" class="w-5 h-5 mr-2" %} Logs
+            </a>
+            {% endif %}
             </div>
         </div>
 
@@ -92,14 +95,11 @@
                 </span>
             </button>
             <div x-show="orgOpen && !collapsed" class="ml-8 mt-2 space-y-2" x-cloak>
-                <a href="#" class="flex items-center px-3 py-2 hover:bg-gray-200">
+                <a href="{% url 'teacher_list' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
                     {% lucide "presentation" class="w-5 h-5 mr-2" %} Teacher
                 </a>
-                <a href="#" class="flex items-center px-3 py-2 hover:bg-gray-200">
+                <a href="{% url 'student_list' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
                     {% lucide "graduation-cap" class="w-5 h-5 mr-2" %} Student
-                </a>
-                <a href="#" class="flex items-center px-3 py-2 hover:bg-gray-200">
-                    {% lucide "shield" class="w-5 h-5 mr-2" %} Admin
                 </a>
             </div>
         </div>
@@ -142,13 +142,13 @@
                 {% lucide "circle-user-round" class="w-10 h-10 text-black" %}
             {% endif %}
         </button>
-        <div class="absolute right-0 mt-2 w-48 bg-white text-gray-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
-            <a href="{% url 'profile' %}" class="block px-4 py-2 hover:bg-gray-100">
+        <div class="absolute right-0 mt-2 w-48 bg-black text-gray-700 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition">
+            <a href="{% url 'profile' %}" class="block px-4 py-2 text-white items-center hover:bg-gray-100 hover:text-black">
                 {% lucide "user" class="mr-2 inline-block" %} Profile
             </a>
             <div class="border-t"></div>
-            <a href="{% url 'logout' %}" class="block px-4 py-2 hover:bg-gray-100 text-red-600">
-                {% lucide "log-out" class="mr-2 inline-block" %} Logout
+            <a href="{% url 'logout' %}" class=" flex flex-row px-4 py-2 items-center hover:bg-gray-100 text-red-600">
+                {% lucide "log-out" class="mr-2 inline-block" %} <p class="text-white hover:text-black" >Logout</p>
             </a>
         </div>
     </div>

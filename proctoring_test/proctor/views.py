@@ -60,7 +60,7 @@ def login_view(request):
 
         # REDIRECTION LOGIC AFTER LOGIN
         if is_teacher(user):
-            return redirect('teacher_dashboard')
+            return redirect('profile')
 
         elif is_student(user):
             dataset_path = os.path.join(
@@ -87,33 +87,42 @@ def login_view(request):
 def profile(request):
     # Determine role from groups
     role = "User"
+    base_template = "base.html"  # default
+
     if request.user.groups.filter(name="Teachers").exists():
         role = "Teacher"
-        # Fetch quizzes that belong to the logged-in teacher (same as teacher_dashboard)
+        base_template = "base.html"
+        # Fetch quizzes that belong to the logged-in teacher
         user_quizzes = Quiz.objects.filter(teacher=request.user).order_by('-created_at')
-        # Calculate statistics
         published_count = user_quizzes.filter(status='published').count()
+
     elif request.user.groups.filter(name="Students").exists():
         role = "Student"
-        # For students, we might want to show quizzes they've taken or are available to them
-        user_quizzes = Quiz.objects.none()  # Empty queryset for now
+        base_template = "base_student.html"
+        # For students, we might want to show quizzes they've taken or available
+        user_quizzes = Quiz.objects.none()
         published_count = 0
+
     elif request.user.groups.filter(name="Admins").exists():
         role = "Admin"
+        base_template = "base.html"
         # For admins, show all quizzes
         user_quizzes = Quiz.objects.all().order_by('-created_at')
         published_count = user_quizzes.filter(status='published').count()
+
     else:
-        user_quizzes = Quiz.objects.none()  # Empty queryset for regular users
+        user_quizzes = Quiz.objects.none()
         published_count = 0
 
     context = {
         "user_quizzes": user_quizzes,
         "published_count": published_count,
         "role": role,
-        "now": timezone.now()  # Add current time like teacher_dashboard
+        "base_template": base_template,
+        "now": timezone.now(),
     }
     return render(request, "proctor/profile.html", context)
+
  #Logout view
 @login_required
 def logout_view(request):
@@ -178,9 +187,15 @@ def teacher_dashboard(request):
         return redirect('home')
     
     quizzes = Quiz.objects.filter(teacher=request.user).order_by('-created_at')
+
+    # ✅ Count students from the "Students" group
+    students_group = Group.objects.get(name="Students")
+    total_students = students_group.user_set.count()
+
     return render(request, 'proctor/teacher_dashboard.html', {
         'quizzes': quizzes,
-        'now': timezone.now()
+        'now': timezone.now(),
+        'total_students': total_students,
     })
 
 # Quiz creation views
@@ -208,43 +223,196 @@ def create_quiz_view(request):
 
     return render(request, 'proctor/create_quiz.html')
 
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
+from django.core.paginator import Paginator
+from django.db.models import Q
+@login_required
+def teacher_list(request):
+    query = request.GET.get("q", "")
+    sort = request.GET.get("sort", "name")  # default sorting by name
 
+    teachers = User.objects.filter(groups__name="Teachers")
+    if query:
+        teachers = teachers.filter(
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query) |
+            Q(email__icontains=query)
+        )
+
+    # Sorting
+    if sort == "name":
+        teachers = teachers.order_by('first_name')
+    elif sort == "-name":
+        teachers = teachers.order_by('-first_name')
+    elif sort == "email":
+        teachers = teachers.order_by('email')
+
+    # Pagination
+    paginator = Paginator(teachers, 10)  # 10 per page
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        "teachers": page_obj,
+        "query": query,
+        "sort": sort,
+    }
+    return render(request, "proctor/teacher_list.html", context)
+
+@login_required
+def student_list(request):
+    query = request.GET.get("q", "")
+    sort = request.GET.get("sort", "name")  # default sorting by name
+
+    students = User.objects.filter(groups__name="Students")
+    if query:
+        students = students.filter(
+            Q(first_name__icontains=query) |
+            Q(last_name__icontains=query) |
+            Q(email__icontains=query)
+        )
+
+    # Sorting
+    if sort == "name":
+        students = students.order_by('first_name')
+    elif sort == "-name":
+        students = students.order_by('-first_name')
+    elif sort == "email":
+        students = students.order_by('email')
+
+    # Pagination
+    paginator = Paginator(students, 10)  # 10 per page
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    context = {
+        "students": page_obj,
+        "query": query,
+        "sort": sort,
+    }
+    return render(request, "proctor/student_list.html", context)
+
+from .models import Quiz, Question, Choice, StudentResponse, MatchingPair,BlankAnswer
 @login_required
 def add_questions(request, quiz_id):
     quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
     existing_question_count = quiz.questions.count()
 
-    if request.method == 'POST':
-        question_text = request.POST['question']
-        correct_index = int(request.POST['correct'])
+    if request.method == "POST":
+        q_type = request.POST.get("question_type")
+        q_text = request.POST.get("text")
+        section = request.POST.get("section", "Default")
 
+        if not q_type or (q_type != "match" and not q_text):
+            messages.error(request, "Question type and body are required.")
+            return redirect("add_questions", quiz_id=quiz.id)
+
+        # Create question
         question = Question.objects.create(
             quiz=quiz,
-            text=question_text,
-            order=existing_question_count
+            text=q_text,
+            order=existing_question_count,
+            section=section,
+            question_type=q_type  # use submitted type directly
         )
 
-        for i in range(4):
+        # ---------------------- MCQ ----------------------
+        if q_type == "multiple":
+            option_index = 1
+            correct_count = 0
+            while True:
+                opt_key = f"option{option_index}"
+                corr_key = f"correct{option_index}"
+
+                if opt_key not in request.POST:
+                    break
+
+                text = request.POST.get(opt_key)
+                if text:
+                    is_correct = corr_key in request.POST
+                    if is_correct:
+                        correct_count += 1
+                    Choice.objects.create(
+                        question=question,
+                        text=text,
+                        is_correct=is_correct,
+                        order=option_index
+                    )
+                option_index += 1
+
+            if correct_count == 0:
+                messages.warning(request, "At least one correct answer should be marked.")
+
+        # ---------------------- True/False ----------------------
+        elif q_type == "truefalse":
+            correct_value = request.POST.get("correct")
+            if correct_value not in ["True", "False"]:
+                messages.error(request, "You must select the correct True/False answer.")
+                question.delete()
+                return redirect("add_questions", quiz_id=quiz.id)
+
             Choice.objects.create(
-                question=question,
-                text=request.POST[f'answer{i+1}'],
-                is_correct=(i == correct_index),
-                order=i
+                question=question, text="True", is_correct=(correct_value == "True"), order=1
+            )
+            Choice.objects.create(
+                question=question, text="False", is_correct=(correct_value == "False"), order=2
             )
 
+        # ---------------------- Fill in the Blank ----------------------
+        elif q_type == "fill":
+            blanks = [key for key in request.POST.keys() if key.startswith("correct")]
+            for i, blank in enumerate(sorted(blanks, key=lambda x: int(x.replace("correct", "")))):
+                ans_text = request.POST.get(blank).strip()
+                if ans_text:
+                    BlankAnswer.objects.create(
+                        question=question,
+                        correct_text=ans_text
+                    )
+
+        elif q_type == "match":
+                    left_keys = sorted([k for k in request.POST if k.startswith("left")])
+                    right_keys = sorted([k for k in request.POST if k.startswith("right")])
+
+                    pair_count = 0
+                    for l_key, r_key in zip(left_keys, right_keys):
+                        left_text = request.POST.get(l_key, "").strip()
+                        right_text = request.POST.get(r_key, "").strip()
+                        if left_text and right_text:
+                            MatchingPair.objects.create(
+                                question=question,
+                                left_text=left_text,
+                                right_text=right_text
+                            )
+                            pair_count += 1
+
+                    if pair_count == 0:
+                        messages.error(request, "You must provide at least one matching pair.")
+                        question.delete()
+                        return redirect("add_questions", quiz_id=quiz.id)
+
+        # ---------------------- Check if quiz is complete ----------------------
         if quiz.questions.count() >= quiz.question_count:
-            quiz.status = 'published'
+            quiz.status = "published"
             quiz.save()
-            messages.success(request, 'Quiz published successfully.')
-            return redirect('teacher_dashboard')
+            messages.success(request, "Quiz published successfully!")
+            return redirect("teacher_dashboard")
+        else:
+            messages.success(
+                request,
+                f"Question saved! ({quiz.questions.count()}/{quiz.question_count})"
+            )
+            return redirect("add_questions", quiz_id=quiz.id)
 
-        return redirect('add_questions', quiz_id=quiz.id)
 
-    return render(request, 'proctor/add_question.html', {
-        'quiz': quiz,
-        'current_question': existing_question_count + 1,
-        'total_questions': quiz.question_count
-    })
+    # GET request
+    context = {
+        "quiz": quiz,
+        "current_question": existing_question_count + 1,
+        "total_questions": quiz.question_count,
+    }
+    return render(request, "proctor/add_questions.html", context)
 
 
 @login_required
@@ -398,9 +566,23 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils.timezone import now
-from .models import Quiz, StudentResponse, Choice
+from .models import Quiz, StudentResponse, Choice, MatchingPair
 
 face_process = {}  # Track running face recognition processes per user
+
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.utils.timezone import now
+import os, signal
+
+from .models import Quiz, StudentResponse, Choice
+from .utils import is_student  # your helper
+
+from django.db import transaction
+import logging
+
+logger = logging.getLogger(__name__)
 
 @login_required
 def take_quiz(request, quiz_id):
@@ -410,7 +592,7 @@ def take_quiz(request, quiz_id):
 
     quiz = get_object_or_404(Quiz, id=quiz_id)
 
-    # Check quiz availability
+    # Check availability
     if now() < quiz.open_time or now() > quiz.close_time:
         messages.error(request, "Quiz is not currently available.")
         return redirect('available_quizzes')
@@ -421,34 +603,149 @@ def take_quiz(request, quiz_id):
         return redirect('student_dashboard')
 
     if request.method == "POST":
-        # Save student answers
-        for question in quiz.questions.all():
-            selected_choice_id = request.POST.get(f"question_{question.id}")
-            if selected_choice_id:
-                StudentResponse.objects.create(
-                    student=request.user,
-                    quiz=quiz,
-                    question=question,
-                    selected_choice_id=selected_choice_id
-                )
+        saved_any = False
+        try:
+            with transaction.atomic():
+                for question in quiz.questions.all():
+                    field_name = f"question_{question.id}"
 
-        # Stop face recognition subprocess if it exists
-        pid = face_process.get(request.user.username)
-        if pid:
-            try:
-                os.kill(pid, signal.SIGTERM)
-                del face_process[request.user.username]
-            except Exception as e:
-                print(f"Could not kill face recognition process {pid}: {e}")
+                    # read posted value(s)
+                    # For checkboxes (multi-select) template should use name="question_<id>" and send multiple values
+                    posted_values = request.POST.getlist(field_name)  # returns [] if not present
+                    single_value = request.POST.get(field_name)  # None if not present
 
-        messages.success(request, "Quiz submitted successfully.")
-        return redirect('student_dashboard')  # <-- IMPORTANT: redirect after POST
+                    # normalize question type (support both naming schemes)
+                    qtype = (question.question_type or "").lower()
+                    if qtype in ("multiple", "mcq", "multiplechoice", "multiple_choice"):
+                        # Could be single-radio or multiple-checkboxes depending on template.
+                        # If getlist returns length > 1 OR the input was checkbox, handle multiple selections.
+                        if posted_values:
+                            # Posted values usually are choice IDs; iterate and create responses
+                            for val in posted_values:
+                                try:
+                                    cid = int(val)
+                                except (TypeError, ValueError):
+                                    logger.warning(f"Invalid choice id for question {question.id}: {val}")
+                                    continue
+                                # ensure choice exists and belongs to question
+                                try:
+                                    choice = Choice.objects.get(id=cid, question=question)
+                                except Choice.DoesNotExist:
+                                    logger.warning(f"Choice id {cid} not found for question {question.id}")
+                                    continue
+
+                                StudentResponse.objects.create(
+                                    student=request.user,
+                                    quiz=quiz,
+                                    question=question,
+                                    selected_choice=choice
+                                )
+                                saved_any = True
+                        elif single_value:
+                            # fallback single selection (radio) -> single_value should be a choice id
+                            try:
+                                cid = int(single_value)
+                                choice = Choice.objects.get(id=cid, question=question)
+                                StudentResponse.objects.create(
+                                    student=request.user,
+                                    quiz=quiz,
+                                    question=question,
+                                    selected_choice=choice
+                                )
+                                saved_any = True
+                            except (TypeError, ValueError):
+                                logger.warning(f"Invalid single MCQ value for q {question.id}: {single_value}")
+                            except Choice.DoesNotExist:
+                                logger.warning(f"Choice {single_value} not found for q {question.id}")
+                        else:
+                            # No answer posted for this question; optionally you can create an empty StudentResponse
+                            logger.info(f"No MCQ answer posted for question {question.id} by {request.user.username}")
+
+                    elif qtype in ("truefalse", "tf", "true_false"):
+                        # Expect a single value "True" or "False" or "true"/"false"
+                        answer = single_value
+                        if answer is None:
+                            # maybe posted as list, take first
+                            answer = posted_values[0] if posted_values else None
+
+                        if answer is not None:
+                            StudentResponse.objects.create(
+                                student=request.user,
+                                quiz=quiz,
+                                question=question,
+                                text_answer=str(answer).strip()
+                            )
+                            saved_any = True
+                        else:
+                            logger.info(f"No TF answer posted for question {question.id}")
+
+                    elif qtype in ("fill", "blank", "fillintheblank", "fill_in_the_blank"):
+                        answer = single_value or (posted_values[0] if posted_values else "")
+                        if answer is not None:
+                            StudentResponse.objects.create(
+                                student=request.user,
+                                quiz=quiz,
+                                question=question,
+                                text_answer=str(answer).strip()
+                            )
+                            saved_any = True
+                        else:
+                            logger.info(f"No fill answer for question {question.id}")
+                    elif qtype in ("match", "matching"):  # support both spellings
+                            raw_answer = single_value or (posted_values[0] if posted_values else "{}")
+                            try:
+                                parsed = json.loads(raw_answer) if raw_answer else {}
+                            except Exception:
+                                parsed = {}
+                                logger.warning(f"Invalid matching JSON for q {question.id}: {raw_answer}")
+
+                            StudentResponse.objects.create(
+                                student=request.user,
+                                quiz=quiz,
+                                question=question,
+                                matched_pairs=parsed
+                            )
+                            saved_any = True
+                    else:
+                        # Unknown/other question type: attempt to store text
+                        answer = single_value or (posted_values[0] if posted_values else None)
+                        if answer:
+                            StudentResponse.objects.create(
+                                student=request.user,
+                                quiz=quiz,
+                                question=question,
+                                text_answer=str(answer).strip()
+                            )
+                            saved_any = True
+                        else:
+                            logger.info(f"No answer posted for unknown-type question {question.id}")
+
+                # --- stop face process if exists (your existing logic) ---
+                pid = face_process.get(request.user.username)
+                if pid:
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        del face_process[request.user.username]
+                    except Exception as e:
+                        logger.warning(f"Could not kill face process {pid}: {e}")
+
+        except Exception as e:
+            logger.exception(f"Error saving responses for user {request.user.username}, quiz {quiz.id}: {e}")
+            messages.error(request, "There was a problem submitting your quiz. Please try again.")
+            return redirect('take_quiz', quiz_id=quiz.id)
+
+        if saved_any:
+            messages.success(request, "Quiz submitted successfully.")
+        else:
+            messages.warning(request, "You submitted the quiz but no answers were recorded (no inputs detected).")
+
+        return redirect('student_dashboard')
 
     # GET: render quiz page
     return render(request, "proctor/take_quiz.html", {
         "quiz": quiz,
         "questions": quiz.questions.all().order_by("order"),
-        "time_limit": quiz.time_limit * 60,  # seconds
+        "time_limit": quiz.time_limit * 60,  # in seconds
     })
 
 import cv2, numpy as np, base64, os
@@ -553,6 +850,19 @@ from .knn_module import knn  # Ensure you import your KNN function correctly
 
 #     return JsonResponse({'valid': False, 'error': 'Face mismatch'})
 # ----------------- Face Verification ----------------- #
+
+import base64
+import numpy as np
+import cv2
+import os
+import json
+from django.conf import settings
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth.decorators import login_required
+
+from .knn_module import knn  # Ensure you import your KNN function correctly
+
 import os
 import time
 import json
@@ -565,7 +875,7 @@ from django.contrib.auth.decorators import login_required
 from django.urls import reverse
 
 # Toggle face recognition on/off
-FACE_RECOGNITION_ENABLED = True  # Set to True to enable recognition again
+FACE_RECOGNITION_ENABLED = False  # Set to True to enable recognition again
 
 # ----------------- Improved KNN Helper with distance -----------------
 def distance(v1, v2):
@@ -599,7 +909,7 @@ def _load_face_dataset():
         current_time - _last_cache_time < CACHE_TIMEOUT):
         return _face_dataset_cache, _labels_cache, _names_cache, _trainset_cache, _dynamic_threshold
     
-    dataset_path = r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project\face_dataset"
+    dataset_path = os.path.join(settings.BASE_DIR, 'Real-time-Face-Recognition-Project', 'face_dataset')
     face_data, labels, names, class_id = [], [], {}, 0
 
     if not os.path.exists(dataset_path):
@@ -801,8 +1111,13 @@ def _handle_face_mismatch(request, reason, distance_value):
             'mismatch_count': new_mismatch_count,
             'distance': float(distance_value)
         })
-
-
+import os
+import subprocess
+import sys
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.http import JsonResponse
 
 # ---- Start capture face ----
 import os
@@ -872,9 +1187,7 @@ def homepage(request):
 
 def about(request):
     return render(request, 'proctor/about.html')
-
-from django.shortcuts import render, get_object_or_404, redirect
-from django.contrib import messages
+from django.shortcuts import render, get_object_or_404
 from .models import Quiz, StudentResponse
 
 def teacher_quiz_results(request, quiz_id):
@@ -882,9 +1195,9 @@ def teacher_quiz_results(request, quiz_id):
     quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
 
     # Fetch all responses for this quiz
-    responses = StudentResponse.objects.filter(
-        quiz=quiz
-    ).select_related("student", "question", "selected_choice")
+    responses = StudentResponse.objects.filter(quiz=quiz).select_related(
+        "student", "question", "selected_choice"
+    )
 
     # Organize results per student
     student_results = {}
@@ -897,20 +1210,58 @@ def teacher_quiz_results(request, quiz_id):
                 "answers": []
             }
 
-        # Get the correct answer text
-        correct_choice = response.question.choices.filter(is_correct=True).first()
-        correct_text = correct_choice.text if correct_choice else "No correct option set"
+        # Matching question
+        if response.question.question_type == "match":
+            pairs = []
+            correct_pairs = {
+                pair.left_text: pair.right_text for pair in response.question.matching_pairs.all()
+            }
 
-        # Add answer details
-        if response.is_correct:
-            student_results[student]["score"] += 1
+            if response.matched_pairs:
+                for left, right in response.matched_pairs.items():
+                    correct = correct_pairs.get(left) == right
+                    pairs.append({
+                        "left": left,
+                        "right": right,
+                        "correct": correct
+                    })
+                    if correct:
+                        student_results[student]["score"] += 1 / max(len(correct_pairs), 1)
 
-        student_results[student]["answers"].append({
-            "question": response.question.text,
-            "selected": response.selected_choice.text if response.selected_choice else "No answer",
-            "correct": response.is_correct,
-            "correct_answer": correct_text
-        })
+            student_results[student]["answers"].append({
+                "question": response.question.text,
+                "type": "match",
+                "selected": pairs,
+                "correct_answer": ", ".join([f"{l} → {r}" for l, r in correct_pairs.items()]),
+            })
+
+        # MCQ, TF, Fill-in-the-Blank
+        else:
+            selected_text = ""
+            correct_text = ""
+
+            if response.question.question_type in ["mcq", "tf"]:
+                selected_text = response.selected_choice.text if response.selected_choice else "No answer"
+                correct_choices = response.question.choices.filter(is_correct=True)
+                correct_text = ", ".join([c.text for c in correct_choices])
+
+            elif response.question.question_type == "fill":
+                selected_text = response.text_answer or "No answer"
+                # Get all blanks for this question
+                correct_blanks = response.question.blank_answers.all()
+                correct_text = ", ".join([b.correct_text for b in correct_blanks])
+
+            # Update score if correct
+            if response.is_correct:
+                student_results[student]["score"] += 1
+
+            student_results[student]["answers"].append({
+                "question": response.question.text,
+                "type": response.question.question_type,
+                "selected": selected_text,
+                "correct_answer": correct_text,
+                "correct": response.is_correct
+            })
 
     return render(request, "proctor/teacher_quiz_results.html", {
         "quiz": quiz,
@@ -918,16 +1269,18 @@ def teacher_quiz_results(request, quiz_id):
     })
 
 
+@login_required
 def delete_quiz(request, quiz_id):
     if request.method == 'POST':
         quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+        quiz_title = quiz.title
         quiz.delete()
-        messages.success(request, f'Quiz "{quiz.title}" has been deleted.')
-        return redirect('profile')
+        messages.success(request, f'Quiz "{quiz_title}" has been deleted.')
+        return redirect('teacher_dashboard')  # 🔥 Redirect back to dashboard
     else:
         messages.warning(request, 'Invalid request method.')
-        return redirect('profile')
-
+        return redirect('teacher_dashboard')
+    
 from django.shortcuts import get_object_or_404, redirect
 from .models import Quiz
 
@@ -1016,3 +1369,185 @@ def face_capture_process(request):
     # This page handles the actual webcam capture
     return render(request, 'proctor/face_capture_process.html')
 
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib import messages
+from .models import Quiz, StudentResponse
+from .utils import is_teacher
+
+@login_required
+def quiz_results(request, quiz_id):
+    if not is_teacher(request.user):
+        messages.error(request, 'Access restricted to teachers.')
+        return redirect('home')
+
+    quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+
+    # Group results by student
+    student_ids = (
+        StudentResponse.objects.filter(quiz=quiz)
+        .values_list("student", flat=True)
+        .distinct()
+    )
+
+    student_results = []
+    for sid in student_ids:
+        responses = StudentResponse.objects.filter(student_id=sid, quiz=quiz)
+        correct_answers = responses.filter(is_correct=True).count()
+        total_questions = quiz.questions.count()
+        percentage = round((correct_answers / total_questions) * 100, 2) if total_questions > 0 else 0
+
+        student_results.append({
+            "student": responses.first().student,  # get user object
+            "correct_answers": correct_answers,
+            "total_questions": total_questions,
+            "percentage": percentage,
+        })
+
+    return render(request, "proctor/quiz_results.html", {
+        "quiz": quiz,
+        "results": student_results,
+    })
+
+@login_required
+def results_overview(request):
+    if not is_teacher(request.user):
+        messages.error(request, 'Access restricted to teachers.')
+        return redirect('home')
+
+    # Get all quizzes for the teacher
+    quizzes = Quiz.objects.filter(teacher=request.user).order_by('-created_at')
+    
+    # Calculate comprehensive statistics
+    total_quizzes = quizzes.count()
+    published_quizzes = quizzes.filter(status='published').count()
+    draft_quizzes = quizzes.filter(status='draft').count()
+    
+    # Get all student responses for teacher's quizzes
+    all_responses = StudentResponse.objects.filter(quiz__teacher=request.user)
+    total_responses = all_responses.count()
+    
+    # Calculate average scores
+    quiz_stats = []
+    for quiz in quizzes:
+        responses = StudentResponse.objects.filter(quiz=quiz)
+        if responses.exists():
+            # Group by student to get individual scores
+            student_scores = {}
+            for response in responses:
+                student = response.student
+                if student not in student_scores:
+                    student_scores[student] = {'correct': 0, 'total': 0}
+                student_scores[student]['total'] += 1
+                if response.is_correct:
+                    student_scores[student]['correct'] += 1
+            
+            # Calculate statistics
+            scores = []
+            for student, data in student_scores.items():
+                if data['total'] > 0:
+                    percentage = (data['correct'] / data['total']) * 100
+                    scores.append(percentage)
+            
+            if scores:
+                avg_score = sum(scores) / len(scores)
+                max_score = max(scores)
+                min_score = min(scores)
+                students_count = len(scores)
+            else:
+                avg_score = max_score = min_score = 0
+                students_count = 0
+        else:
+            avg_score = max_score = min_score = 0
+            students_count = 0
+        
+        quiz_stats.append({
+            'quiz': quiz,
+            'students_count': students_count,
+            'avg_score': round(avg_score, 1),
+            'max_score': round(max_score, 1),
+            'min_score': round(min_score, 1),
+            'total_questions': quiz.questions.count(),
+        })
+    
+    # Recent activity - last 10 responses
+    recent_responses = (StudentResponse.objects
+                       .filter(quiz__teacher=request.user)
+                       .select_related('student', 'quiz', 'question')
+                       .order_by('-id')[:10])
+    
+    # Performance trends (last 5 quizzes)
+    recent_quizzes = quizzes[:5]
+    performance_data = []
+    for quiz in recent_quizzes:
+        responses = StudentResponse.objects.filter(quiz=quiz)
+        if responses.exists():
+            correct_responses = responses.filter(is_correct=True).count()
+            total_responses = responses.count()
+            if total_responses > 0:
+                success_rate = (correct_responses / total_responses) * 100
+            else:
+                success_rate = 0
+        else:
+            success_rate = 0
+        
+        performance_data.append({
+            'quiz_title': quiz.title,
+            'success_rate': round(success_rate, 1),
+            'created_date': quiz.created_at
+        })
+    
+    context = {
+        'total_quizzes': total_quizzes,
+        'published_quizzes': published_quizzes,
+        'draft_quizzes': draft_quizzes,
+        'total_responses': total_responses,
+        'quiz_stats': quiz_stats,
+        'recent_responses': recent_responses,
+        'performance_data': performance_data,
+        'now': timezone.now(),
+    }
+    
+    return render(request, 'proctor/results_overview.html', context)
+
+from django.utils.dateparse import parse_datetime
+from django.http import HttpResponse
+from .models import ProctorEvent
+
+@login_required
+def proctor_logs(request, quiz_id):
+    if not is_teacher(request.user):
+        messages.error(request, 'Access restricted to teachers.')
+        return redirect('home')
+
+    quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+    qs = ProctorEvent.objects.filter(quiz=quiz)
+
+    # filters (optional)
+    student = request.GET.get('student')
+    if student:
+        qs = qs.filter(student__username=student)
+    evt_type = request.GET.get('type')
+    if evt_type:
+        qs = qs.filter(event_type=evt_type)
+    since = request.GET.get('since')  # ISO-8601
+    if since:
+        dt = parse_datetime(since)
+        if dt:
+            qs = qs.filter(created_at__gte=dt)
+
+    fmt = request.GET.get('format')
+    if fmt == 'csv':
+        import csv
+        resp = HttpResponse(content_type='text/csv')
+        resp['Content-Disposition'] = f'attachment; filename="proctor_logs_{quiz.id}.csv"'
+        w = csv.writer(resp)
+        w.writerow(['created_at','student','event_type','severity','message','metadata'])
+        for e in qs.iterator():
+            w.writerow([e.created_at.isoformat(), e.student.username, e.event_type, e.severity, e.message, e.metadata])
+        return resp
+
+    return render(request, 'proctor/proctor_logs.html', {
+        'quiz': quiz,
+        'events': qs.select_related('student')[:1000],  # cap to keep page snappy
+    })

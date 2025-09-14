@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Background -->
+<div class="min-h-screen flex items-center justify-center p-6">
+
+    <!-- Form Container -->
+    <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg p-8">
+        <form method="post" class="space-y-6">
+            {% csrf_token %}
+
+            <!-- Header -->
+            <div class="flex justify-between items-center border-b pb-3">
+                <h2 class="text-xl font-bold text-gray-800">Edit Question</h2>
+                <div class="space-x-2">
+                    <button type="button" class="px-3 py-1.5 text-sm border border-red-500 text-red-600 rounded hover:bg-red-50">
+                        Remove Question
+                    </button>
+                    <button type="submit" class="px-3 py-1.5 text-sm border border-green-500 text-green-600 rounded hover:bg-green-50">
+                        Save
+                    </button>
+                </div>
+            </div>
+
+            <!-- Question Type -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700">Question Type</label>
+                    <select id="question-type" name="question_type"
+                        class="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-indigo-300">
+                        <option value="">-- Select --</option>
+                        <option value="multiple">Multiple Choice</option>
+                        <option value="truefalse">True / False</option>
+                        <option value="fill">Fill in the Blank</option>
+                        <option value="match">Matching</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Question Body -->
+            <div>
+                <label class="block text-sm font-semibold text-gray-700">Question Body</label>
+                <textarea name="text" id="question-text" rows="4"
+                    class="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-indigo-300"></textarea>
+            </div>
+
+            <!-- Answer Config -->
+            <div>
+                <h3 class="font-semibold text-gray-800">Answer Configuration</h3>
+                <div id="answer-options" class="mt-4 border rounded bg-gray-50 p-4 space-y-3">
+                    <!-- Dynamic answer options will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="flex justify-between">
+                <button type="button" class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100">
+                    ← Previous
+                </button>
+                <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                    Save and Add Next →
+                </button>
+            </div>
+        </form>
+    </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const typeSelect = document.getElementById("question-type");
+    const optionsDiv = document.getElementById("answer-options");
+    const questionText = document.getElementById("question-text");
+    const form = document.querySelector("form");
+    let blankCount = 1;
+
+    function renderOptions(type) {
+        optionsDiv.innerHTML = "";
+        blankCount = 1;
+
+        if (type === "multiple") {
+            optionsDiv.innerHTML = `
+                <label class="block font-semibold text-gray-700 mb-2">Available Options</label>
+                <div class="flex items-center space-x-2 mb-2">
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="option1" placeholder="Option 1">
+                    <label class="inline-flex items-center space-x-1">
+                        <input type="checkbox" name="correct1" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm">Correct</span>
+                    </label>
+                </div>
+                <div class="flex items-center space-x-2 mb-2">
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="option2" placeholder="Option 2">
+                    <label class="inline-flex items-center space-x-1">
+                        <input type="checkbox" name="correct2" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm">Correct</span>
+                    </label>
+                </div>
+                <button type="button" class="px-3 py-1.5 text-sm border rounded text-gray-700 hover:bg-gray-100" id="add-more">+ Add More</button>
+            `;
+
+            document.getElementById("add-more").addEventListener("click", function () {
+                const count = optionsDiv.querySelectorAll("input[type='text']").length + 1;
+                const div = document.createElement("div");
+                div.classList.add("flex", "items-center", "space-x-2", "mb-2");
+                div.innerHTML = `
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="option${count}" placeholder="Option ${count}">
+                    <label class="inline-flex items-center space-x-1">
+                        <input type="checkbox" name="correct${count}" class="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="text-sm">Correct</span>
+                    </label>
+                `;
+                optionsDiv.insertBefore(div, document.getElementById("add-more"));
+            });
+        }
+
+        if (type === "truefalse") {
+            optionsDiv.innerHTML = `
+                <label class="block font-semibold text-gray-700 mb-2">Available Options</label>
+                <label class="flex items-center space-x-2 mb-2">
+                    <input type="radio" name="correct" value="True" class="border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    <span>True</span>
+                </label>
+                <label class="flex items-center space-x-2">
+                    <input type="radio" name="correct" value="False" class="border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                    <span>False</span>
+                </label>
+            `;
+        }
+
+        if (type === "fill") {
+            optionsDiv.innerHTML = `
+                <button type="button" class="px-3 py-1.5 text-sm border rounded text-gray-700 hover:bg-gray-100" id="add-blank">
+                    + Add Blank
+                </button>
+                <div id="fill-answers" class="mt-3 space-y-2"></div>
+            `;
+
+            const addBlankBtn = document.getElementById("add-blank");
+            const fillAnswersDiv = document.getElementById("fill-answers");
+
+            addBlankBtn.addEventListener("click", function () {
+                const cursorPos = questionText.selectionStart;
+                const textBefore = questionText.value.substring(0, cursorPos);
+                const textAfter = questionText.value.substring(cursorPos);
+
+                // Insert visible blank
+                questionText.value = textBefore + "______" + textAfter;
+                questionText.focus();
+                questionText.selectionStart = questionText.selectionEnd = cursorPos + 6;
+
+                // Add input for correct answer
+                const inputDiv = document.createElement("div");
+                inputDiv.classList.add("flex", "items-center", "space-x-2", "mb-2");
+                inputDiv.innerHTML = `
+                    <label class="text-sm font-medium">Blank ${blankCount}:</label>
+                    <input type="text" name="correct${blankCount}" class="flex-1 border rounded px-3 py-2" placeholder="Correct answer for Blank ${blankCount}">
+                `;
+                fillAnswersDiv.appendChild(inputDiv);
+                blankCount++;
+            });
+        }
+
+        if (type === "match") {
+            // Hide Question Body
+            questionText.closest("div").style.display = "none";
+
+            optionsDiv.innerHTML = `
+                <label class="block font-semibold text-gray-700 mb-2">Matching Pairs</label>
+                <div class="flex items-center space-x-2 mb-2">
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="left1" placeholder="Left Item 1">
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="right1" placeholder="Right Item 1">
+                </div>
+                <div class="flex items-center space-x-2 mb-2">
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="left2" placeholder="Left Item 2">
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="right2" placeholder="Right Item 2">
+                </div>
+                <button type="button" class="px-3 py-1.5 text-sm border rounded text-gray-700 hover:bg-gray-100" id="add-pair">
+                    + Add Pair
+                </button>
+            `;
+
+            document.getElementById("add-pair").addEventListener("click", function () {
+                const count = optionsDiv.querySelectorAll("input[name^='left']").length + 1;
+                const div = document.createElement("div");
+                div.classList.add("flex", "items-center", "space-x-2", "mb-2");
+                div.innerHTML = `
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="left${count}" placeholder="Left Item ${count}">
+                    <input type="text" class="flex-1 border rounded px-3 py-2" name="right${count}" placeholder="Right Item ${count}">
+                `;
+                optionsDiv.insertBefore(div, document.getElementById("add-pair"));
+            });
+        } else {
+            // Restore Question Body for other types
+            questionText.closest("div").style.display = "block";
+        }
+    }
+
+    typeSelect.addEventListener("change", function () {
+        renderOptions(typeSelect.value);
+    });
+
+    form.addEventListener("submit", function (e) {
+        const type = typeSelect.value;
+        let valid = true;
+
+        optionsDiv.querySelectorAll("input").forEach(el => el.style.border = "");
+
+        if (!type) {
+            alert("Please select a question type.");
+            e.preventDefault();
+            return;
+        }
+
+        if (type === "multiple") {
+            const checkboxes = optionsDiv.querySelectorAll("input[type='checkbox']");
+            if (!Array.from(checkboxes).some(cb => cb.checked)) {
+                valid = false;
+                alert("Please mark at least one correct answer.");
+            }
+        }
+
+        if (type === "truefalse") {
+            const radios = optionsDiv.querySelectorAll("input[type='radio']");
+            if (!Array.from(radios).some(r => r.checked)) {
+                valid = false;
+                alert("Please select the correct answer (True/False).");
+            }
+        }
+
+        if (type === "fill") {
+            const blanks = optionsDiv.querySelectorAll("#fill-answers input");
+            blanks.forEach(input => {
+                if (!input.value.trim()) {
+                    input.classList.add("border-red-500");
+                    valid = false;
+                }
+            });
+            if (!valid) alert("Please enter all correct answers for the blanks.");
+        }
+
+        if (type === "match") {
+            const leftInputs = optionsDiv.querySelectorAll("input[name^='left']");
+            const rightInputs = optionsDiv.querySelectorAll("input[name^='right']");
+            if (!Array.from(leftInputs).some((l, i) => l.value.trim() && rightInputs[i].value.trim())) {
+                valid = false;
+                alert("Please provide at least one matching pair.");
+            }
+        }
+
+        if (!valid) e.preventDefault();
+    });
+});
+</script>
+</div>
+{% endblock %}
