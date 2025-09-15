@@ -42,7 +42,7 @@
         <th class="px-3 py-2 text-left">Type</th>
         <th class="px-3 py-2 text-left">Severity</th>
         <th class="px-3 py-2 text-left">Message</th>
-        <th class="px-3 py-2 text-left">Snapshot</th>
+        <!-- <th class="px-3 py-2 text-left">Snapshot</th> -->
       </tr>
     </thead>
     <tbody>
@@ -64,13 +64,13 @@
           {% endwith %}
         </td>
         <td class="px-3 py-2 max-w-[40ch] truncate" title="{{ e.message }}">{{ e.message }}</td>
-        <td class="px-3 py-2">
+        <!-- <td class="px-3 py-2">
           {% if e.frame %}
             <a href="{{ e.frame.url }}" target="_blank" title="Open full image">
               <img src="{{ e.frame.url }}" alt="snap" class="h-12 w-16 object-cover rounded">
             </a>
           {% else %} — {% endif %}
-        </td>
+        </td> -->
       </tr>
       {% empty %}
       <tr><td class="px-3 py-4 text-gray-500" colspan="6">No logs yet.</td></tr>
