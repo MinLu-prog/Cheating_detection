@@ -2389,3 +2389,6 @@
 2025-09-14T21:43:47.935788 - HEAD_POSE - proctoring_snapshots\head_pose_20250914_214347.jpg
 2025-09-15T13:15:23.475354 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250915_131523.jpg
 2025-09-15T13:16:07.105897 - HEAD_POSE - proctoring_snapshots\head_pose_20250915_131607.jpg
+2025-09-15T20:09:30.150940 - HEAD_POSE - proctoring_snapshots\head_pose_20250915_200930.jpg
+2025-09-15T20:09:30.167674 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250915_200930.jpg
+2025-09-15T20:09:39.320914 - HEAD_POSE - proctoring_snapshots\head_pose_20250915_200939.jpg

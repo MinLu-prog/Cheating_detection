@@ -25,63 +25,62 @@
 
     {% block extra_css %}{% endblock %}
 </head>
-<body class="min-h-screen flex bg-gradient-to-r from-white to-blue-400 text-gray-900">
+<body
+  class="min-h-screen flex bg-gradient-to-r from-white to-blue-400 text-gray-900"
+  x-data="{ collapsed:false }"
+>
+
 {% if user.is_authenticated %}
 <aside id="sidebar"
-       class="fixed top-5 left-5 bottom-5 w-60 bg-[#73b4ea] text-black
-              flex flex-col overflow-hidden shadow-lg transition-all duration-300 z-50 rounded-lg"
-       x-data="{ collapsed: false }"
+       class="fixed top-0 left-5 bottom-5 bg-[#73b4ea] text-black flex flex-col shadow-lg transition-all duration-300 z-50 rounded-lg overflow-hidden"
        :class="collapsed ? 'w-20' : 'w-60'">
 
-  <!-- Logo + Collapse Button -->
-  <div class="flex items-center justify-between px-4 h-16 border-b border-gray-300">
-    <span class="text-lg font-bold" x-show="!collapsed">MIIT</span>
-    <button @click="collapsed = !collapsed" class="text-black hover:text-gray-600">
-      <span x-show="collapsed">{% lucide "university" class="w-6 h-6" %}</span>
-      <span x-show="!collapsed">{% lucide "arrow-left-from-line" class="w-6 h-6" %}</span>
-    </button>
-  </div>
+    <!-- Logo + Collapse Button -->
+    <div class="flex items-center justify-between px-4 h-16 border-b border-gray-300">
+        <span class="text-lg font-bold" x-show="!collapsed">MIIT</span>
+        <button @click="collapsed = !collapsed" class="text-black hover:text-gray-600">
+            <span x-show="collapsed">{% lucide "university" class="w-6 h-6" %}</span>
+            <span x-show="!collapsed">{% lucide "arrow-left-from-line" class="w-6 h-6" %}</span>
+        </button>
+    </div>
 
-  <!-- Nav Links (scrolls if long) -->
-  <nav class="flex-1 min-h-0 px-2 py-6 space-y-2 overflow-y-auto">
-    <a href="{% url 'student_dashboard' %}"
-       class="flex items-center px-3 py-2 rounded-lg hover:bg-gray-200 transition">
-      {% lucide "notebook-pen" class="w-6 h-6" %}
-      <span class="ml-2" x-show="!collapsed">Dashboard</span>
-    </a>
-    <a href="{% url 'student_logs' %}"
-   class="flex items-center px-3 py-2 rounded-lg hover:bg-gray-200 transition">
-  {% lucide "list" class="w-6 h-6" %}
-  <span class="ml-2" x-show="!collapsed">Logs</span>
-</a>
+    <!-- Nav Links -->
+    <nav class="flex-1 px-2 py-6 space-y-2 overflow-y-auto">
+        <a href="{% url 'student_dashboard' %}" 
+           class="flex items-center px-3 py-2 rounded-lg hover:bg-gray-200 transition">
+            {% lucide "notebook-pen" class="w-6 h-6" %}
+            <span class="ml-2" x-show="!collapsed">Dashboard</span>
+        </a>
 
-  </nav>
-  
+        <a href="{% url 'student_logs' %}" 
+           class="flex items-center px-3 py-2 rounded-lg hover:bg-gray-200 transition">
+            {% lucide "list" class="w-6 h-6" %}
+            <span class="ml-2" x-show="!collapsed">Logs</span>
+        </a>
+    </nav>
 
-  <!-- Logout pinned to bottom -->
-  <div class="p-4 border-t border-gray-300 mt-auto">
-    <a href="{% url 'logout' %}"
-       class="flex items-center justify-center w-full px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition">
-      {% lucide "log-out" class="w-6 h-6" %}
-      <span class="ml-2" x-show="!collapsed">Logout</span>
-    </a>
-  </div>
+    <!-- Logout -->
+    <div class="p-4 border-t border-gray-300 mt-auto">
+        <a href="{% url 'logout' %}" 
+           class="flex items-center justify-center w-full px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition">
+            {% lucide "log-out" class="w-6 h-6" %}
+            <span class="ml-2" x-show="!collapsed">Logout</span>
+        </a>
+    </div>
 </aside>
 {% endif %}
 
-<!-- ✅ Top Bar -->
-<header class="fixed  top-5 left-6 right-3 h-16  bg-[#73b4ea] text-black rounded-lg flex items-center justify-between px-4 shadow-md z-40 md:ml-60">
-    <!-- Left Section: Hamburger + Title -->
+<!-- ✅ Top Bar with transition like base -->
+<header
+  class="fixed top-0 left-6 right-3 h-16 bg-[#73b4ea] text-black rounded-lg flex items-center justify-between px-4 shadow-md z-40 transition-all duration-300"
+  :class="collapsed ? 'md:ml-20' : 'md:ml-60'">
     <div class="flex items-center space-x-4">
-        <!-- Mobile Sidebar Toggle -->
         <button id="openSidebar" class="text-black hover:text-gray-600 md:hidden">
             {% lucide "menu" class="w-6 h-6" %}
         </button>
-        <!-- Page Title -->
         <h1 class="text-lg font-semibold">Student Dashboard</h1>
     </div>
 
-    <!-- Right Section: Profile Dropdown -->
     {% if user.is_authenticated %}
     <div class="relative group">
         <button class="flex items-center focus:outline-none">
@@ -98,16 +97,19 @@
                 {% lucide "user" class="mr-2 inline-block" %} Profile
             </a>
             <div class="border-t"></div>
-            <a href="{% url 'logout' %}" class=" flex flex-row px-4 py-2 items-center hover:bg-gray-100 text-red-600">
-                {% lucide "log-out" class="mr-2 inline-block" %} <p class="text-white hover:text-black" >Logout</p>
+            <a href="{% url 'logout' %}" class="flex flex-row px-4 py-2 items-center hover:bg-gray-100 text-red-600">
+                {% lucide "log-out" class="mr-2 inline-block" %} 
+                <p class="text-white hover:text-black">Logout</p>
             </a>
         </div>
     </div>
     {% endif %}
 </header>
 
-<!-- ✅ Main Content -->
-<div class="flex-1 flex flex-col md:ml-60 pt-16">
+<!-- ✅ Main Content with transition like base -->
+<div
+  class="flex-1 flex flex-col pt-20 transition-all duration-300"
+  :class="collapsed ? 'md:ml-20' : 'md:ml-60'">
     <main class="flex-1 p-6 overflow-y-auto">
         {% if messages %}
             {% for message in messages %}
@@ -131,7 +133,6 @@
     const openSidebar = document.getElementById("openSidebar");
     const closeSidebar = document.getElementById("closeSidebar");
 
-    // Hide sidebar on mobile by default
     if (window.innerWidth < 768 && sidebar) {
         sidebar.classList.add("-translate-x-full");
     }
