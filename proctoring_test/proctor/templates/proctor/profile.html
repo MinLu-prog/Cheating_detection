@@ -3,241 +3,273 @@
 {% load lucide %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto p-6 space-y-6 page-transition" 
-     x-data="{ 
-        activeTab: 'profile', 
-        searchQuery: '', 
-        statusFilter: 'all' 
+<div class="max-w-5xl mx-auto p-6 space-y-6 page-transition"
+     x-data="{
+        activeTab: 'profile',
+        searchQuery: '',
+        statusFilter: 'all'
      }">
 
-    <!-- ✅ Profile Card -->
-    <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+  <!-- ✅ Profile Card -->
+  <div class="bg-white rounded-lg shadow-lg overflow-hidden">
 
-        <!-- Background Image (banner style) -->
-        <div class="relative">
-            <img src="{% static 'images/profile-bg.png' %}" alt="Profile Background"
-                 class="w-full h-full object-cover">
-            <div class="absolute inset-0"></div>
-        </div>
-
-        <!-- User Info -->
-        <div class="relative flex flex-col md:flex-row items-center md:items-end space-y-4 md:space-y-0 md:space-x-6 px-6 -mt-16 pb-6">
-            <!-- Avatar -->
-            {% if user.profile.image %}
-                <img src="{{ user.profile.image.url }}" alt="Profile"
-                     class="w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover">
-            {% else %}
-                <div class="w-32 h-32 rounded-full border-4 border-white shadow-lg flex items-center justify-center bg-gray-200 text-gray-600">
-                    {% lucide "user" class="w-16 h-16" %}
-                </div>
-            {% endif %}
-
-            <!-- Info -->
-            <div class="text-center md:text-left text-white md:mb-4">
-                <h2 class="text-3xl font-bold drop-shadow-lg">{{ user.get_full_name|default:user.username }}</h2>
-                <p class="text-lg opacity-90 font-medium">{{ role|default:"User" }}</p>
-                <p class="text-sm opacity-80">{{ user.email }}</p>
-                <div class="flex flex-wrap justify-center md:justify-start gap-2 mt-2">
-                    <span class="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs">
-                        {% lucide "calendar" class="w-3 h-3 inline mr-1" %}
-                        Joined {{ user.date_joined|date:"M Y" }}
-                    </span>
-                    <span class="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs">
-                        {% lucide "activity" class="w-3 h-3 inline mr-1" %}
-                        Active
-                    </span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tabs -->
-        <div class="border-b border-gray-200 px-6">
-            <ul class="flex space-x-8 text-sm font-medium">
-                <li>
-                    <a href="#" @click.prevent="activeTab = 'profile'"
-                       :class="activeTab === 'profile' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
-                       class="transition-all duration-300 ease-in-out">
-                        {% lucide "user" class="w-4 h-4 inline mr-1" %}
-                        Profile
-                    </a>
-                </li>
-                <li>
-                    <a href="#" @click.prevent="activeTab = 'quizzes'"
-                       :class="activeTab === 'quizzes' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
-                       class="transition-all duration-300 ease-in-out">
-                        {% lucide "file-text" class="w-4 h-4 inline mr-1" %}
-                        My Quizzes
-                    </a>
-                </li>
-                <li>
-                    <a href="#" @click.prevent="activeTab = 'history'"
-                       :class="activeTab === 'history' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
-                       class="transition-all duration-300 ease-in-out">
-                        {% lucide "clock" class="w-4 h-4 inline mr-1" %}
-                        History
-                    </a>
-                </li>
-            </ul>
-        </div>
-
-        <!-- Profile Tab Content -->
-        <div x-show="activeTab === 'profile'" 
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="opacity-0 transform translate-y-4"
-             x-transition:enter-end="opacity-100 transform translate-y-0"
-             x-transition:leave="transition ease-in duration-200"
-             x-transition:leave-start="opacity-100 transform translate-y-0"
-             x-transition:leave-end="opacity-0 transform translate-y-4"
-             class="p-6">
-            <div class="grid md:grid-cols-2 gap-6">
-                <div class="space-y-4">
-                    <h3 class="text-lg font-semibold text-gray-800">Personal Information</h3>
-                    <div class="space-y-3">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600">Full Name</label>
-                            <p class="text-gray-800">{{ user.get_full_name|default:"Not provided" }}</p>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600">Email</label>
-                            <p class="text-gray-800">{{ user.email }}</p>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600">Username</label>
-                            <p class="text-gray-800">{{ user.username }}</p>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600">Role</label>
-                            <p class="text-gray-800">{{ role|default:"User" }}</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="space-y-4">
-                    <h3 class="text-lg font-semibold text-gray-800">Account Statistics</h3>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="bg-blue-50 p-4 rounded-lg text-center hover:bg-blue-100 transition-colors duration-200 cursor-pointer">
-                            <div class="text-2xl font-bold text-blue-600">{{ user_quizzes.count|default:0 }}</div>
-                            <div class="text-sm text-blue-600">Total Quizzes</div>
-                        </div>
-                        <div class="bg-green-50 p-4 rounded-lg text-center hover:bg-green-100 transition-colors duration-200 cursor-pointer">
-                            <div class="text-2xl font-bold text-green-600">{{ published_count }}</div>
-                            <div class="text-sm text-green-600">Published</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Quizzes Tab Content -->
-        <div x-show="activeTab === 'quizzes'" 
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="opacity-0 transform translate-y-4"
-             x-transition:enter-end="opacity-100 transform translate-y-0"
-             x-transition:leave="transition ease-in duration-200"
-             x-transition:leave-start="opacity-100 transform translate-y-0"
-             x-transition:leave-end="opacity-0 transform translate-y-4"
-             class="p-6">
-            <h5 class="text-lg font-semibold text-gray-800 mb-4">Your Quizzes</h5>
-
-            {% if user_quizzes %}
-            <!-- Search & Filter -->
-            <div class="mb-6 flex flex-col md:flex-row gap-4">
-                <div class="flex-1">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Search Quizzes</label>
-                    <input type="text" x-model="searchQuery" 
-                           class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" 
-                           placeholder="Search by quiz title...">
-                </div>
-                <div class="md:w-48">
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Filter by Status</label>
-                    <select x-model="statusFilter" 
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
-                        <option value="all">All Quizzes</option>
-                        <option value="published">Published</option>
-                        <option value="draft">Draft</option>
-                        <option value="archived">Archived</option>
-                    </select>
-                </div>
-            </div>
-
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left border border-gray-200">
-                    <thead class="bg-gray-900 text-white">
-                        <tr>
-                            <th class="px-4 py-2">Title</th>
-                            <th class="px-4 py-2">Status</th>
-                            <th class="px-4 py-2">Open Time</th>
-                            <th class="px-4 py-2">Close Time</th>
-                            <th class="px-4 py-2">Time Limit</th>
-                            <th class="px-4 py-2">Questions</th>
-                            <th class="px-4 py-2 text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for quiz in user_quizzes %}
-                        <tr class="border-t hover:bg-gray-50 transition quiz-row" 
-                            x-show="(searchQuery.trim() === '' || '{{ quiz.title|lower }}'.includes(searchQuery.toLowerCase())) && 
-                                    (statusFilter === 'all' || '{{ quiz.status }}'.toLowerCase() === statusFilter.toLowerCase())">
-                            <td class="px-4 py-2 font-medium">{{ quiz.title }}</td>
-                            <td class="px-4 py-2">
-                                <span class="inline-block px-2 py-1 text-xs rounded bg-gray-800 text-white">
-                                    {{ quiz.get_status_display }}
-                                </span>
-                            </td>
-                            <td class="px-4 py-2">{{ quiz.open_time|date:"M d, Y H:i" }}</td>
-                            <td class="px-4 py-2">{{ quiz.close_time|date:"M d, Y H:i" }}</td>
-                            <td class="px-4 py-2">{{ quiz.time_limit }} mins</td>
-                            <td class="px-4 py-2">{{ quiz.questions.count }}</td>
-                            <td class="px-4 py-2 text-center">
-                                <div class="flex justify-center space-x-2">
-                                    <!-- View Results Button -->
-                                    <a href="{% url 'teacher_quiz_results' quiz.id %}" 
-                                       class="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded hover:bg-green-700 transition">
-                                        {% lucide "eye" class="w-4 h-4 inline mr-1" %} View Results
-                                    </a>
-
-                                    <!-- Delete Button -->
-                                    <form method="post" action="{% url 'delete_quiz' quiz.id %}" 
-                                          class="quiz-delete-form" data-quiz-id="{{ quiz.id }}">
-                                        {% csrf_token %}
-                                        <button type="submit" 
-                                                class="px-4 py-2 bg-red-600 text-white text-sm font-medium rounded hover:bg-red-700 transition"
-                                                title="Delete">
-                                            {% lucide "trash-2" class="w-4 h-4 inline mr-1" %} Delete
-                                        </button>
-                                    </form>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="p-4 bg-gray-100 text-gray-700 rounded-lg animate-fadeIn">
-                You haven't created any quizzes yet. Visit the <strong>Teacher Dashboard</strong> to create your first quiz!
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- History Tab Content -->
-        <div x-show="activeTab === 'history'" 
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="opacity-0 transform translate-y-4"
-             x-transition:enter-end="opacity-100 transform translate-y-0"
-             x-transition:leave="transition ease-in duration-200"
-             x-transition:leave-start="opacity-100 transform translate-y-0"
-             x-transition:leave-end="opacity-0 transform translate-y-4"
-             class="p-6">
-            <div class="text-center py-12">
-                <div class="flex flex-col items-center">
-                    {% lucide "clock" class="w-16 h-16 text-gray-300 mb-4" %}
-                    <h3 class="text-lg font-medium text-gray-800 mb-2">Quiz History</h3>
-                    <p class="text-gray-500">Your quiz history will appear here.</p>
-                </div>
-            </div>
-        </div>
-
+    <!-- Banner -->
+    <div class="relative">
+      <img src="{% static 'images/profile-bg.png' %}" alt="Profile Background" class="w-full h-full object-cover">
+      <div class="absolute inset-0"></div>
     </div>
+
+    <!-- User Info -->
+    <div class="relative flex flex-col md:flex-row items-center md:items-end space-y-4 md:space-y-0 md:space-x-6 px-6 -mt-16 pb-6">
+      {% if user.profile.image %}
+        <img src="{{ user.profile.image.url }}" alt="Profile"
+             class="w-32 h-32 rounded-full border-4 border-white shadow-lg object-cover">
+      {% else %}
+        <div class="w-32 h-32 rounded-full border-4 border-white shadow-lg flex items-center justify-center bg-gray-200 text-gray-600">
+          {% lucide "user" class="w-16 h-16" %}
+        </div>
+      {% endif %}
+
+      <div class="text-center md:text-left text-white md:mb-4">
+        <h2 class="text-3xl font-bold drop-shadow-lg">{{ user.get_full_name|default:user.username }}</h2>
+        <p class="text-lg opacity-90 font-medium">{{ role|default:"User" }}</p>
+        <p class="text-sm opacity-80">{{ user.email }}</p>
+        <div class="flex flex-wrap justify-center md:justify-start gap-2 mt-2">
+          <span class="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs">
+            {% lucide "calendar" class="w-3 h-3 inline mr-1" %}
+            Joined {{ user.date_joined|date:"M Y" }}
+          </span>
+          <span class="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full text-xs">
+            {% lucide "activity" class="w-3 h-3 inline mr-1" %}
+            Active
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="border-b border-gray-200 px-6">
+      <ul class="flex space-x-8 text-sm font-medium">
+        <li>
+          <a href="#" @click.prevent="activeTab = 'profile'"
+             :class="activeTab === 'profile' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
+             class="transition-all duration-300 ease-in-out">
+            {% lucide "user" class="w-4 h-4 inline mr-1" %} Profile
+          </a>
+        </li>
+        <li>
+          <a href="#" @click.prevent="activeTab = 'quizzes'"
+             :class="activeTab === 'quizzes' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
+             class="transition-all duration-300 ease-in-out">
+            {% lucide "file-text" class="w-4 h-4 inline mr-1" %} My Quizzes
+          </a>
+        </li>
+        <li>
+          <a href="#" @click.prevent="activeTab = 'history'"
+             :class="activeTab === 'history' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
+             class="transition-all duration-300 ease-in-out">
+            {% lucide "clock" class="w-4 h-4 inline mr-1" %} History
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Profile Tab -->
+    <div x-show="activeTab === 'profile'"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 transform translate-y-4"
+         x-transition:enter-end="opacity-100 transform translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 transform translate-y-0"
+         x-transition:leave-end="opacity-0 transform translate-y-4"
+         class="p-6">
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold text-gray-800">Personal Information</h3>
+          <div class="space-y-3">
+            <div>
+              <label class="block text-sm font-medium text-gray-600">Full Name</label>
+              <p class="text-gray-800">{{ user.get_full_name|default:"Not provided" }}</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600">Email</label>
+              <p class="text-gray-800">{{ user.email }}</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600">Username</label>
+              <p class="text-gray-800">{{ user.username }}</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-600">Role</label>
+              <p class="text-gray-800">{{ role|default:"User" }}</p>
+            </div>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold text-gray-800">Account Statistics</h3>
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-blue-50 p-4 rounded-lg text-center hover:bg-blue-100 transition-colors duration-200 cursor-pointer">
+              <div class="text-2xl font-bold text-blue-600">{{ user_quizzes.count|default:0 }}</div>
+              <div class="text-sm text-blue-600">Total Quizzes</div>
+            </div>
+            <div class="bg-green-50 p-4 rounded-lg text-center hover:bg-green-100 transition-colors duration-200 cursor-pointer">
+              <div class="text-2xl font-bold text-green-600">{{ published_count }}</div>
+              <div class="text-sm text-green-600">Published</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- My Quizzes (paginated) -->
+    <div x-show="activeTab === 'quizzes'"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 transform translate-y-4"
+         x-transition:enter-end="opacity-100 transform translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 transform translate-y-0"
+         x-transition:leave-end="opacity-0 transform translate-y-4"
+         class="p-6">
+
+      <!-- Header with total & page badge -->
+      <div class="flex items-center justify-between mb-4">
+        <h5 class="text-lg font-semibold text-gray-800">
+          Your Quizzes
+          <span class="ml-2 text-sm text-gray-500">({{ user_quizzes.count }} total)</span>
+        </h5>
+        {% if quizzes_page.paginator.num_pages > 0 %}
+          <span class="px-2 py-1 text-xs rounded bg-gray-100 border">
+            {{ quizzes_page.number }} / {{ quizzes_page.paginator.num_pages }}
+          </span>
+        {% endif %}
+      </div>
+
+      {% if user_quizzes %}
+        <!-- Search & Filter -->
+        <div class="mb-6 flex flex-col md:flex-row gap-4">
+          <div class="flex-1">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Search Quizzes</label>
+            <input type="text" x-model="searchQuery"
+                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                   placeholder="Search by quiz title...">
+          </div>
+          <div class="md:w-48">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Filter by Status</label>
+            <select x-model="statusFilter"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
+              <option value="all">All Quizzes</option>
+              <option value="published">Published</option>
+              <option value="draft">Draft</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm text-left border border-gray-200">
+            <thead class="bg-gray-900 text-white">
+              <tr>
+                <th class="px-4 py-2">Title</th>
+                <th class="px-4 py-2">Status</th>
+                <th class="px-4 py-2">Open Time</th>
+                <th class="px-4 py-2">Close Time</th>
+                <th class="px-4 py-2">Time Limit</th>
+                <th class="px-4 py-2">Questions</th>
+                <th class="px-4 py-2 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for quiz in quizzes_page %}
+              <tr class="border-t hover:bg-gray-50 transition quiz-row"
+                  x-show="(searchQuery.trim() === '' || '{{ quiz.title|lower }}'.includes(searchQuery.toLowerCase())) &&
+                          (statusFilter === 'all' || '{{ quiz.status }}'.toLowerCase() === statusFilter.toLowerCase())">
+                <td class="px-4 py-2 font-medium">{{ quiz.title }}</td>
+                <td class="px-4 py-2">
+                  <span class="inline-block px-2 py-1 text-xs rounded bg-gray-800 text-white">
+                    {{ quiz.get_status_display }}
+                  </span>
+                </td>
+                <td class="px-4 py-2">{{ quiz.open_time|date:"M d, Y H:i" }}</td>
+                <td class="px-4 py-2">{{ quiz.close_time|date:"M d, Y H:i" }}</td>
+                <td class="px-4 py-2">{{ quiz.time_limit }} mins</td>
+                <td class="px-4 py-2">{{ quiz.questions.count }}</td>
+                <td class="px-4 py-2 text-center">
+                  <div class="flex justify-center gap-2">
+                    <!-- Edit -->
+                    <a href="{% url 'edit_quiz' quiz.id %}"
+                       class="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition"
+                       title="Edit">
+                      {% lucide "pencil" class="w-4 h-4" %}
+                    </a>
+
+                    <!-- View Results -->
+                    <a href="{% url 'teacher_quiz_results' quiz.id %}"
+                       class="p-2 rounded-lg bg-green-600 text-white hover:bg-green-700 shadow-sm transition"
+                       title="View Results">
+                      {% lucide "eye" class="w-4 h-4" %}
+                    </a>
+
+                    <!-- Delete -->
+                    <form method="post" action="{% url 'delete_quiz' quiz.id %}"
+                          class="quiz-delete-form" data-quiz-id="{{ quiz.id }}">
+                      {% csrf_token %}
+                      <button type="submit"
+                              class="p-2 rounded-lg bg-red-600 text-white hover:bg-red-700 shadow-sm transition"
+                              title="Delete">
+                        {% lucide "trash-2" class="w-4 h-4" %}
+                      </button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if quizzes_page.has_other_pages %}
+        <div class="mt-4 flex items-center justify-center gap-2">
+          {% if quizzes_page.has_previous %}
+            <a href="?qpage={{ quizzes_page.previous_page_number }}#quizzes"
+               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Prev</a>
+          {% endif %}
+          <span class="px-3 py-1 bg-gray-100 rounded">
+            {{ quizzes_page.number }} / {{ quizzes_page.paginator.num_pages }}
+          </span>
+          {% if quizzes_page.has_next %}
+            <a href="?qpage={{ quizzes_page.next_page_number }}#quizzes"
+               class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Next</a>
+          {% endif %}
+        </div>
+        {% endif %}
+
+      {% else %}
+        <div class="p-4 bg-gray-100 text-gray-700 rounded-lg animate-fadeIn">
+          You haven't created any quizzes yet. Visit the <strong>Teacher Dashboard</strong> to create your first quiz!
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- History Tab -->
+    <div x-show="activeTab === 'history'"
+         x-transition:enter="transition ease-out duration-300"
+         x-transition:enter-start="opacity-0 transform translate-y-4"
+         x-transition:enter-end="opacity-100 transform translate-y-0"
+         x-transition:leave="transition ease-in duration-200"
+         x-transition:leave-start="opacity-100 transform translate-y-0"
+         x-transition:leave-end="opacity-0 transform translate-y-4"
+         class="p-6">
+      <div class="text-center py-12">
+        <div class="flex flex-col items-center">
+          {% lucide "clock" class="w-16 h-16 text-gray-300 mb-4" %}
+          <h3 class="text-lg font-medium text-gray-800 mb-2">Quiz History</h3>
+          <p class="text-gray-500">Your quiz history will appear here.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
 {% endblock %}
 
@@ -245,38 +277,43 @@
 <style>
 /* ✅ Page Fade-in/out */
 .page-transition {
-    opacity: 0;
-    transform: translateY(10px);
-    transition: opacity 0.6s ease, transform 0.6s ease;
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
 }
 .page-transition.loaded {
-    opacity: 1;
-    transform: translateY(0);
+  opacity: 1;
+  transform: translateY(0);
 }
 /* ✅ Row fade-out when deleting quiz */
 @keyframes fadeOut {
-    from { opacity: 1; transform: translateX(0); }
-    to { opacity: 0; transform: translateX(-20px); }
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-20px); }
 }
-.animate-fadeOut {
-    animation: fadeOut 0.7s forwards;
-}
+.animate-fadeOut { animation: fadeOut 0.7s forwards; }
 </style>
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
-    // Page transition on load
-    document.querySelector(".page-transition").classList.add("loaded");
+  const container = document.querySelector(".page-transition");
+  if (container) container.classList.add("loaded");
 
-    // Quiz delete with fade-out
-    document.querySelectorAll(".quiz-delete-form").forEach(form => {
-        form.addEventListener("submit", function(e) {
-            e.preventDefault();
-            const row = form.closest("tr");
-            row.classList.add("animate-fadeOut");
-            setTimeout(() => form.submit(), 700); // wait for fade out
-        });
+  // ✅ Auto-open quizzes tab if URL has #quizzes
+  if (window.location.hash === "#quizzes") {
+    const alpineScope = document.querySelector("[x-data]").__x.$data;
+    alpineScope.activeTab = "quizzes";
+  }
+
+  // Quiz delete fade-out
+  document.querySelectorAll(".quiz-delete-form").forEach(form => {
+    form.addEventListener("submit", function(e) {
+      e.preventDefault();
+      const row = form.closest("tr");
+      row.classList.add("animate-fadeOut");
+      setTimeout(() => form.submit(), 700);
     });
+  });
 });
+
 </script>
 {% endblock %}

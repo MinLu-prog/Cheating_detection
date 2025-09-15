@@ -25,11 +25,14 @@
 
     {% block extra_css %}{% endblock %}
 </head>
-<body class="min-h-screen flex bg-gradient-to-r from-white to-blue-400 text-gray-900">
+<body
+  class="min-h-screen flex bg-gradient-to-r from-white to-blue-400 text-gray-900"
+  x-data="{ collapsed:false, managementOpen:false, orgOpen:false }"
+>
 
-{% if user.is_authenticated %}<aside id="sidebar" 
-       class="fixed top-5 left-5 bottom-5 w-60 bg-[#73b4ea] text-black flex flex-col shadow-lg transition-all duration-300 z-50 rounded-lg"
-       x-data="{ collapsed: false, managementOpen: false, orgOpen: false }"
+{% if user.is_authenticated %}
+<aside id="sidebar"
+       class="fixed top-0 left-5 bottom-5 bg-[#73b4ea] text-black flex flex-col shadow-lg transition-all duration-300 z-50 rounded-lg overflow-hidden"
        :class="collapsed ? 'w-20' : 'w-60'">
 
     <!-- Logo + Collapse Button -->
@@ -51,54 +54,53 @@
         </a>
 
         <!-- Management Dropdown -->
-<!-- Management Dropdown -->
-<div>
-  <button @click="managementOpen = !managementOpen" 
-          class="flex items-center justify-between w-full px-3 py-2 rounded-lg hover:bg-gray-200 transition">
-    <div class="flex items-center">
-      {% lucide "layout-dashboard" class="w-6 h-6" %}
-      <span class="ml-2" x-show="!collapsed">Management</span>
-    </div>
-    <span x-show="!collapsed" 
-          class="transition-transform duration-300" 
-          :class="managementOpen ? 'rotate-90' : 'rotate-0'">
-      {% lucide "chevron-right" class="w-4 h-4" %}
-    </span>
-  </button>
+        <div>
+          <button @click="managementOpen = !managementOpen" 
+                  class="flex items-center justify-between w-full px-3 py-2 rounded-lg hover:bg-gray-200 transition">
+            <div class="flex items-center">
+              {% lucide "layout-dashboard" class="w-6 h-6" %}
+              <span class="ml-2" x-show="!collapsed">Management</span>
+            </div>
+            <span x-show="!collapsed" 
+                  class="transition-transform duration-300" 
+                  :class="managementOpen ? 'rotate-90' : 'rotate-0'">
+              {% lucide "chevron-right" class="w-4 h-4" %}
+            </span>
+          </button>
 
-  <div x-show="managementOpen && !collapsed" class="ml-8 mt-2 space-y-2" x-cloak>
-    <a href="{% url 'create_quiz' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
-      {% lucide "circle-help" class="w-5 h-5 mr-2" %} Create Quiz
-    </a>
+          <div x-show="managementOpen && !collapsed" class="ml-8 mt-2 space-y-2" x-cloak>
+            <a href="{% url 'create_quiz' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
+              {% lucide "circle-help" class="w-5 h-5 mr-2" %} Create Quiz
+            </a>
 
-    <a href="{% url 'results_overview' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
-      {% lucide "chart-bar" class="w-5 h-5 mr-2" %} Results
-    </a>
+            <a href="{% url 'results_overview' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
+              {% lucide "chart-bar" class="w-5 h-5 mr-2" %} Results
+            </a>
 
-    <!-- 🔎 Logs (All exams) -->
-    <a href="{% url 'proctor_logs_all' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
-      {% lucide "list-checks" class="w-5 h-5 mr-2" %} All Logs
-    </a>
+            <!-- 🔎 Logs (All exams) -->
+            <a href="{% url 'proctor_logs_all' %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
+              {% lucide "list-checks" class="w-5 h-5 mr-2" %} All Logs
+            </a>
 
-    <!-- 📝 Logs for the current quiz (only if 'quiz' is in template context) -->
-    {% if quiz %}
-      <a href="{% url 'proctor_logs' quiz.id %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
-        {% lucide "list" class="w-5 h-5 mr-2" %} This Exam Logs
-      </a>
+            <!-- 📝 Logs for the current quiz (only if 'quiz' is in template context) -->
+            {% if quiz %}
+              <a href="{% url 'proctor_logs' quiz.id %}" class="flex items-center px-3 py-2 hover:bg-gray-200">
+                {% lucide "list" class="w-5 h-5 mr-2" %} This Exam Logs
+              </a>
 
-      <!-- ⚡ Optional: partial endpoint (raw rows; useful for debugging/embedding) -->
-      <a href="{% url 'proctor_logs_partial' quiz.id %}" target="_blank" rel="noopener"
-         class="flex items-center px-3 py-2 hover:bg-gray-200">
-        {% lucide "bolt" class="w-5 h-5 mr-2" %} Live Rows (partial)
-      </a>
-    {% else %}
-      <!-- Disabled state when no quiz in context -->
-      <span class="flex items-center px-3 py-2 text-gray-500 cursor-not-allowed">
-        {% lucide "list" class="w-5 h-5 mr-2" %} This Exam Logs
-      </span>
-    {% endif %}
-  </div>
-</div>
+              <!-- ⚡ Optional: partial endpoint -->
+              <a href="{% url 'proctor_logs_partial' quiz.id %}" target="_blank" rel="noopener"
+                 class="flex items-center px-3 py-2 hover:bg-gray-200">
+                {% lucide "bolt" class="w-5 h-5 mr-2" %} Live Rows (partial)
+              </a>
+            {% else %}
+              <!-- Disabled when no quiz in context -->
+              <span class="flex items-center px-3 py-2 text-gray-500 cursor-not-allowed">
+                {% lucide "list" class="w-5 h-5 mr-2" %} This Exam Logs
+              </span>
+            {% endif %}
+          </div>
+        </div>
 
         <!-- Organization Dropdown -->
         <div>
@@ -134,12 +136,12 @@
         </a>
     </div>
 </aside>
-
-
 {% endif %}
 
 <!-- ✅ Top Bar -->
-<header class="fixed  top-5 left-6 right-3 h-16  bg-[#73b4ea] text-black rounded-lg flex items-center justify-between px-4 shadow-md z-40 md:ml-60">
+<header
+  class="fixed top-0 left-6 right-3 h-16 bg-[#73b4ea] text-black rounded-lg flex items-center justify-between px-4 shadow-md z-40 transition-all duration-300"
+  :class="collapsed ? 'md:ml-20' : 'md:ml-60'">
     <!-- Left Section: Hamburger + Title -->
     <div class="flex items-center space-x-4">
         <!-- Mobile Sidebar Toggle -->
@@ -167,8 +169,8 @@
                 {% lucide "user" class="mr-2 inline-block" %} Profile
             </a>
             <div class="border-t"></div>
-            <a href="{% url 'logout' %}" class=" flex flex-row px-4 py-2 items-center hover:bg-gray-100 text-red-600">
-                {% lucide "log-out" class="mr-2 inline-block" %} <p class="text-white hover:text-black" >Logout</p>
+            <a href="{% url 'logout' %}" class="flex flex-row px-4 py-2 items-center hover:bg-gray-100 text-red-600">
+                {% lucide "log-out" class="mr-2 inline-block" %} <p class="text-white hover:text-black">Logout</p>
             </a>
         </div>
     </div>
@@ -176,7 +178,9 @@
 </header>
 
 <!-- ✅ Main Content -->
-<div class="flex-1 flex flex-col md:ml-60 pt-16">
+<div
+  class="flex-1 flex flex-col pt-16 transition-all duration-300"
+  :class="collapsed ? 'md:ml-20' : 'md:ml-60'">
     <main class="flex-1 p-6 overflow-y-auto">
         {% if messages %}
             {% for message in messages %}

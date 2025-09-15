@@ -56,7 +56,6 @@
             </div>
         </div>
 
-
         <!-- Total Students -->
         <div class="bg-white rounded-lg shadow-lg p-6 hover:shadow-xl transition-shadow duration-300">
             <div class="flex items-center">
@@ -67,50 +66,9 @@
                 </div>
                 <div class="ml-4">
                     <p class="text-sm font-medium text-gray-600">Students Enrolled</p>
-                        <p class="text-2xl font-semibold text-gray-900">{{ total_students }}</p>
+                    <p class="text-2xl font-semibold text-gray-900">{{ total_students }}</p>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Quick Actions -->
-    <div class="bg-white rounded-lg shadow-lg p-6 animate-fadeIn">
-        <h2 class="text-xl font-semibold text-gray-800 mb-4">Quick Actions</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <a href="{% url 'create_quiz' %}" 
-               class="flex items-center p-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-300 transform hover:scale-105">
-                <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                </svg>
-                <div>
-                    <div class="font-semibold">Create New Quiz</div>
-                    <div class="text-sm opacity-90">Start building a new assessment</div>
-                </div>
-            </a>
-
-            {% if quizzes %}
-            <a href="{% url 'teacher_quiz_results' quizzes.first.id %}" 
-               class="flex items-center p-4 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:from-green-600 hover:to-green-700 transition-all duration-300 transform hover:scale-105">
-                <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                </svg>
-                <div>
-                    <div class="font-semibold">View Quiz Results</div>
-                    <div class="text-sm opacity-90">Check latest quiz results</div>
-                </div>
-            </a>
-            {% else %}
-            <div class="flex items-center p-4 bg-gray-400 text-white rounded-lg cursor-not-allowed">
-                <svg class="w-6 h-6 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
-                </svg>
-                <div>
-                    <div class="font-semibold">View Quiz Results</div>
-                    <div class="text-sm opacity-90">Create a quiz first</div>
-                </div>
-            </div>
-            {% endif %}
-
         </div>
     </div>
 
@@ -150,6 +108,7 @@
                         </div>
                     </div>
                     <div class="flex items-center space-x-2 ml-4">
+                        <!-- View Results -->
                         <a href="{% url 'teacher_quiz_results' quiz.id %}" 
                            class="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200"
                            title="View Results">
@@ -158,6 +117,18 @@
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
                             </svg>
                         </a>
+
+                        <!-- Edit Quiz -->
+                        <a href="{% url 'edit_quiz' quiz.id %}" 
+                           class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+                           title="Edit Quiz">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                      d="M15.232 5.232l3.536 3.536M9 11l6-6 3 3-6 6H9v-3zM4 20h16"></path>
+                            </svg>
+                        </a>
+
+                        <!-- Delete Quiz -->
                         <button @click="selectedQuiz = {{ quiz.id }}; showDeleteModal = true" 
                                 class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
                                 title="Delete Quiz">

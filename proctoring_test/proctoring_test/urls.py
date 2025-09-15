@@ -16,6 +16,7 @@ urlpatterns = [
     path('teacher/save-quiz/', views.save_quiz_info, name='save_quiz_info'),
     path('teacher/add-question/', views.add_question, name='add_question'),
     path('quiz/<int:quiz_id>/add-questions/', views.add_questions, name='add_questions'),
+    path('quiz/<int:quiz_id>/edit/', views.edit_quiz_view, name='edit_quiz'),
 
     # Student URLs
     path('student_dashboard/', views.student_dashboard, name='student_dashboard'),

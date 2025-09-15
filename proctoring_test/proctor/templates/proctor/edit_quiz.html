@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Edit Quiz{% endblock %}
+
+{% block content %}
+<div class="min-h-screen flex items-center justify-center p-6">
+  <div class="w-full max-w-6xl bg-white rounded-xl shadow-lg p-8">
+
+    <!-- Header -->
+    <div class="flex justify-between items-center border-b pb-3 mb-6">
+      <h2 class="text-xl font-bold text-gray-800">Edit Quiz</h2>
+
+      <!-- Delete is its own form (NOT nested) -->
+      <form id="delete-quiz-form" method="post" action="{% url 'delete_quiz' quiz.id %}" onsubmit="return confirm('Delete this quiz?');">
+        {% csrf_token %}
+        <button type="submit"
+                class="px-3 py-1.5 text-sm border border-red-500 text-red-600 rounded hover:bg-red-50">
+          Delete Quiz
+        </button>
+      </form>
+    </div>
+
+    <!-- Edit form -->
+    <form method="post" action="{% url 'edit_quiz' quiz.id %}" class="space-y-6" id="edit-quiz-form">
+      {% csrf_token %}
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700">Title</label>
+          <input type="text" name="title" value="{{ quiz.title }}" required
+                 class="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-indigo-300">
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700">Time Limit (minutes)</label>
+          <input type="number" name="time_limit" min="1" value="{{ quiz.time_limit }}" required
+                 class="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-indigo-300">
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold text-gray-700">Question Count</label>
+          <input type="number" name="question_count" min="1" value="{{ quiz.question_count }}" required
+                 class="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-indigo-300">
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label class="block text-sm font-semibold text-gray-700">Open Time</label>
+          <input type="datetime-local" name="open_date" value="{{ open_value }}" required
+                 class="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-indigo-300">
+        </div>
+        <div>
+          <label class="block text-sm font-semibold text-gray-700">Close Time</label>
+          <input type="datetime-local" name="close_date" value="{{ close_value }}" required
+                 class="mt-1 w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-indigo-300">
+        </div>
+      </div>
+
+      <div class="flex justify-between items-center">
+        <a href="{% url 'add_questions' quiz.id %}"
+           class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+          Manage Questions →
+        </a>
+        <div class="flex gap-2">
+          <a href="{% url 'teacher_dashboard' %}"
+             class="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100">
+            Cancel
+          </a>
+          <button type="submit"
+                  class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  const form = document.getElementById("edit-quiz-form");
+  form.addEventListener("submit", function (e) {
+    const openEl = form.querySelector("input[name='open_date']");
+    const closeEl = form.querySelector("input[name='close_date']");
+    const tlEl = form.querySelector("input[name='time_limit']");
+    const qcEl = form.querySelector("input[name='question_count']");
+
+    const openVal = new Date(openEl.value);
+    const closeVal = new Date(closeEl.value);
+
+    let ok = true;
+    [openEl, closeEl, tlEl, qcEl].forEach(el => el.classList.remove("ring-2", "ring-red-400"));
+
+    if (isNaN(openVal.getTime()) || isNaN(closeVal.getTime()) || closeVal < openVal) {
+      [openEl, closeEl].forEach(el => el.classList.add("ring-2", "ring-red-400"));
+      alert("Close time must be after open time.");
+      ok = false;
+    }
+    if (parseInt(tlEl.value || "0", 10) <= 0) {
+      tlEl.classList.add("ring-2", "ring-red-400");
+      alert("Time limit must be greater than 0.");
+      ok = false;
+    }
+    if (parseInt(qcEl.value || "0", 10) <= 0) {
+      qcEl.classList.add("ring-2", "ring-red-400");
+      alert("Question count must be greater than 0.");
+      ok = false;
+    }
+
+    if (!ok) e.preventDefault();
+  });
+});
+</script>
+{% endblock %}

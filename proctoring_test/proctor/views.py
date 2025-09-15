@@ -83,39 +83,49 @@ def login_view(request):
         return redirect('home')
 
     return render(request, 'proctor/login.html')
+# views.py
+from django.core.paginator import Paginator
+
 @login_required
 def profile(request):
-    # Determine role from groups
     role = "User"
-    base_template = "base.html"  # default
+    base_template = "base.html"
 
     if request.user.groups.filter(name="Teachers").exists():
         role = "Teacher"
         base_template = "base.html"
-        # Fetch quizzes that belong to the logged-in teacher
-        user_quizzes = Quiz.objects.filter(teacher=request.user).order_by('-created_at')
-        published_count = user_quizzes.filter(status='published').count()
+        user_quizzes_qs = Quiz.objects.filter(teacher=request.user).order_by('-created_at')
+        published_count = user_quizzes_qs.filter(status='published').count()
+
+        # NEW: paginate the table only
+        paginator = Paginator(user_quizzes_qs, 10)  # 10 per page (adjust if you want)
+        qpage = request.GET.get("qpage")
+        quizzes_page = paginator.get_page(qpage)
 
     elif request.user.groups.filter(name="Students").exists():
         role = "Student"
         base_template = "base_student.html"
-        # For students, we might want to show quizzes they've taken or available
-        user_quizzes = Quiz.objects.none()
+        user_quizzes_qs = Quiz.objects.none()
         published_count = 0
-
+        paginator = Paginator(user_quizzes_qs, 10)
+        quizzes_page = paginator.get_page(1)
     elif request.user.groups.filter(name="Admins").exists():
         role = "Admin"
         base_template = "base.html"
-        # For admins, show all quizzes
-        user_quizzes = Quiz.objects.all().order_by('-created_at')
-        published_count = user_quizzes.filter(status='published').count()
-
+        user_quizzes_qs = Quiz.objects.all().order_by('-created_at')
+        published_count = user_quizzes_qs.filter(status='published').count()
+        paginator = Paginator(user_quizzes_qs, 10)
+        qpage = request.GET.get("qpage")
+        quizzes_page = paginator.get_page(qpage)
     else:
-        user_quizzes = Quiz.objects.none()
+        user_quizzes_qs = Quiz.objects.none()
         published_count = 0
+        paginator = Paginator(user_quizzes_qs, 10)
+        quizzes_page = paginator.get_page(1)
 
     context = {
-        "user_quizzes": user_quizzes,
+        "user_quizzes": user_quizzes_qs,   # keep queryset for counts in the top “Profile” tab
+        "quizzes_page": quizzes_page,      # use this for the paginated table
         "published_count": published_count,
         "role": role,
         "base_template": base_template,
@@ -1706,4 +1716,63 @@ def student_logs(request):
         "logs": qs[:1000],
         "quizzes": quizzes,
         "selected_quiz": quiz_id or "all",
+    })
+# views.py
+from django.contrib import messages
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required
+from django.urls import reverse
+from django.utils.http import urlencode
+def _parse_local_dt(s):
+    if not s:
+        return None
+    dt = parse_datetime(s)
+    if not dt:
+        return None
+    if timezone.is_naive(dt):
+        dt = timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
+
+@login_required
+def edit_quiz_view(request, quiz_id):
+    if not is_teacher(request.user):
+        messages.error(request, "Access restricted to teachers.")
+        return redirect("home")
+
+    quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+
+    if request.method == "POST":
+        title = request.POST.get("title", "").strip()
+        question_count = int(request.POST.get("question_count", 0) or 0)
+        time_limit = int(request.POST.get("time_limit", 0) or 0)
+        open_time = _parse_local_dt(request.POST.get("open_date"))
+        close_time = _parse_local_dt(request.POST.get("close_date"))
+
+        if not title or not open_time or not close_time or time_limit <= 0 or question_count <= 0 or close_time < open_time:
+            messages.error(request, "Please check your inputs.")
+            return render(request, "proctor/edit_quiz.html", {
+                "quiz": quiz,
+                "open_value": request.POST.get("open_date", ""),
+                "close_value": request.POST.get("close_date", ""),
+            })
+
+        quiz.title = title
+        quiz.question_count = question_count
+        quiz.time_limit = time_limit
+        quiz.open_time = open_time
+        quiz.close_time = close_time
+        quiz.save()
+
+        messages.success(request, "Quiz updated.")
+        url = reverse("profile") + "?" + urlencode({"tab": "quizzes"})
+        return redirect(url)
+    # GET: prefill
+    def to_local_input(dt):
+        return timezone.localtime(dt).strftime("%Y-%m-%dT%H:%M") if dt else ""
+    return render(request, "proctor/edit_quiz.html", {
+        "quiz": quiz,
+        "open_value": to_local_input(quiz.open_time),
+        "close_value": to_local_input(quiz.close_time),
     })
