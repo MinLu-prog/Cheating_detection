@@ -4,7 +4,7 @@ import cv2
 import dlib
 import numpy as np
 from datetime import datetime
-from collections import deque
+from collections import deque, defaultdict
 from typing import Tuple, List
 from ultralytics import YOLO
 
@@ -12,25 +12,45 @@ from ultralytics import YOLO
 class Config:
     LANDMARKS_MODEL = "webcam/shape_predictor_68_face_landmarks.dat"
     YOLO_MODEL = "webcam/yolov8n.pt"
+
+    # Thresholds
     HEAD_YAW_THRESHOLD = 25
     GAZE_THRESHOLD_LEFT = 1.5
     GAZE_THRESHOLD_RIGHT = 0.8
     OBJECT_CONFIDENCE = 0.4
-    ALERT_DURATION = 2
-    ALERT_COOLDOWN = 5
+
+    # ---- Time-based gating (FPS-agnostic) ----
+    ALERT_DURATION = 2.0           # seconds of sustained evidence required to TRIGGER
+    EVIDENCE_WINDOW_SECONDS = 2.0  # sliding window (seconds) for evidence ratio
+    EVIDENCE_MIN_TRUE_RATIO = 0.6  # fraction of 'True' samples within window
+    ALERT_CLEAR_HOLD_SECONDS = 1.0 # linger overlay after evidence clears (seconds)
+    ALERT_COOLDOWN = 5.0           # min seconds between snapshot/logs per alert type
+
+    # (Legacy; no longer used, kept for compatibility)
     CONSECUTIVE_FRAMES = 5
+
     SNAPSHOT_DIR = "proctoring_snapshots"
     LOG_FILE = "proctoring_log.txt"
     FONT = cv2.FONT_HERSHEY_SIMPLEX
 
+
 # ================= ALERT MANAGER =================
 class AlertManager:
+    """
+    FPS-agnostic time-gated alerting:
+      - Samples each alert_type as (timestamp, condition) in a sliding window.
+      - Triggers when evidence ratio in the last EVIDENCE_WINDOW_SECONDS >= threshold
+        and condition persists for at least ALERT_DURATION (arming -> triggered).
+      - Snapshot/logs obey ALERT_COOLDOWN per alert type.
+      - Overlay remains visible while arming/triggered, and lingers for ALERT_CLEAR_HOLD_SECONDS.
+    """
     def __init__(self, config: Config):
         self.config = config
-        self.alert_states = {}
-        self.alert_history = []
-        self.last_alert_times = {}
+        self.alert_states = {}           # per-type state dicts
+        self.last_alert_times = {}       # per-type last trigger wall time (monotonic)
+        self.alert_history = []          # [{type, timestamp, snapshot}]
         os.makedirs(self.config.SNAPSHOT_DIR, exist_ok=True)
+
         self.alert_messages = {
             'head_pose': "⚠️ HEAD TURNED - Look at screen!",
             'eye_gaze': "⚠️ EYES LOOKING AWAY - Look at center!",
@@ -48,32 +68,66 @@ class AlertManager:
             'no_face': (128, 128, 128),
         }
 
-    def check_alert(self, alert_type: str, condition: bool, frame) -> bool:
-        current_time = time.time()
+        # Sliding-window samples: per-type deque[(t_monotonic, bool)]
+        self.samples = defaultdict(lambda: deque())
+
+    def _state(self, alert_type: str):
         if alert_type not in self.alert_states:
-            self.alert_states[alert_type] = {'active': False, 'start_time': None, 'frame_count': 0}
-            self.last_alert_times[alert_type] = 0
+            self.alert_states[alert_type] = {
+                'phase': 'idle',            # idle | arming | triggered | cooldown
+                'armed_at': None,           # monotonic time when arming started
+                'last_true_at': None,       # last time condition was True
+                'last_triggered_at': -1e9,  # monotonic time of last trigger
+            }
+            self.last_alert_times[alert_type] = -1e9
+        return self.alert_states[alert_type]
 
-        state = self.alert_states[alert_type]
+    def check_alert(self, alert_type: str, condition: bool, frame) -> bool:
+        """
+        Returns True if overlay should be visible ('arming' or 'triggered').
+        Triggers snapshot/log when transitioning to 'triggered' (respecting cooldown).
+        """
+        now = time.monotonic()
+        st = self._state(alert_type)
 
+        # Record sample & prune window
+        dq = self.samples[alert_type]
+        dq.append((now, condition))
+        win = self.config.EVIDENCE_WINDOW_SECONDS
+        while dq and (now - dq[0][0]) > win:
+            dq.popleft()
+
+        # Evidence ratio in window
+        true_ratio = (sum(1 for t, c in dq if c) / len(dq)) if dq else 0.0
         if condition:
-            if not state['active']:
-                state['active'] = True
-                state['start_time'] = current_time
-                state['frame_count'] = 1
-            else:
-                state['frame_count'] += 1
-                duration = current_time - state['start_time']
-                if duration >= self.config.ALERT_DURATION and state['frame_count'] >= self.config.CONSECUTIVE_FRAMES:
-                    if current_time - self.last_alert_times[alert_type] >= self.config.ALERT_COOLDOWN:
-                        self.trigger_alert(alert_type, frame)
-                        self.last_alert_times[alert_type] = current_time
-                        return True
+            st['last_true_at'] = now
+
+        cooldown_ok = (now - st['last_triggered_at']) >= self.config.ALERT_COOLDOWN
+        enough_evidence = (true_ratio >= self.config.EVIDENCE_MIN_TRUE_RATIO)
+
+        # State machine
+        if enough_evidence:
+            if st['phase'] in ('idle', 'cooldown'):
+                st['phase'] = 'arming'
+                st['armed_at'] = now
+            elif st['phase'] == 'arming':
+                if (now - (st['armed_at'] or now)) >= self.config.ALERT_DURATION and cooldown_ok:
+                    self.trigger_alert(alert_type, frame)
+                    st['phase'] = 'triggered'
+                    st['last_triggered_at'] = now
         else:
-            state['active'] = False
-            state['start_time'] = None
-            state['frame_count'] = 0
-        return False
+            st['armed_at'] = None
+            if st['phase'] == 'arming':
+                st['phase'] = 'idle'
+            elif st['phase'] == 'triggered':
+                last_true = st['last_true_at'] or now
+                if (now - last_true) >= self.config.ALERT_CLEAR_HOLD_SECONDS:
+                    st['phase'] = 'cooldown'
+
+        if st['phase'] == 'cooldown' and not enough_evidence:
+            st['phase'] = 'idle'
+
+        return st['phase'] in ('arming', 'triggered')
 
     def trigger_alert(self, alert_type: str, frame) -> None:
         timestamp = datetime.now()
@@ -85,25 +139,33 @@ class AlertManager:
     def save_snapshot(self, frame, alert_type: str, timestamp: datetime) -> str:
         fname = f"{alert_type}_{timestamp.strftime('%Y%m%d_%H%M%S')}.jpg"
         filepath = os.path.join(self.config.SNAPSHOT_DIR, fname)
-        cv2.imwrite(filepath, frame)
+        try:
+            cv2.imwrite(filepath, frame)
+        except Exception:
+            # best-effort; if disk fails, still continue
+            pass
         return filepath
 
     def log_alert(self, alert_type: str, timestamp: datetime, snapshot_path: str) -> None:
         entry = f"{timestamp.isoformat()} - {alert_type.upper()} - {snapshot_path}\n"
-        with open(self.config.LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(entry)
+        try:
+            with open(self.config.LOG_FILE, "a", encoding="utf-8") as f:
+                f.write(entry)
+        except Exception:
+            # best-effort logging
+            pass
 
     def draw_alerts(self, frame, active_alerts: List[str]):
         y_offset = 30
         for alert_type in active_alerts:
-            if alert_type in self.alert_states and self.alert_states[alert_type]['active']:
-                color = self.alert_colors.get(alert_type, (255, 255, 255))
-                message = self.alert_messages.get(alert_type, "⚠️ ALERT!")
-                text_size = cv2.getTextSize(message, self.config.FONT, 0.7, 2)[0]
-                cv2.rectangle(frame, (10, y_offset - 25), (20 + text_size[0], y_offset + 5), (0, 0, 0), -1)
-                cv2.putText(frame, message, (15, y_offset), self.config.FONT, 0.7, color, 2)
-                y_offset += 40
+            color = self.alert_colors.get(alert_type, (255, 255, 255))
+            message = self.alert_messages.get(alert_type, "⚠️ ALERT!")
+            text_size = cv2.getTextSize(message, self.config.FONT, 0.7, 2)[0]
+            cv2.rectangle(frame, (10, y_offset - 25), (20 + text_size[0], y_offset + 5), (0, 0, 0), -1)
+            cv2.putText(frame, message, (15, y_offset), self.config.FONT, 0.7, color, 2)
+            y_offset += 40
         return frame
+
 
 # ================= DETECTION SYSTEM =================
 class DetectionSystem:
@@ -145,13 +207,13 @@ class DetectionSystem:
 
         # No face / multi-face
         if len(faces) == 0:
-            self.alert_manager.check_alert('no_face', True, frame)
-            active_alerts.append('no_face')
+            if self.alert_manager.check_alert('no_face', True, frame):
+                active_alerts.append('no_face')
         else:
             self.alert_manager.check_alert('no_face', False, frame)
             if len(faces) > 1:
-                self.alert_manager.check_alert('multi_face', True, frame)
-                active_alerts.append('multi_face')
+                if self.alert_manager.check_alert('multi_face', True, frame):
+                    active_alerts.append('multi_face')
             else:
                 self.alert_manager.check_alert('multi_face', False, frame)
 
@@ -163,26 +225,26 @@ class DetectionSystem:
             # Head pose
             yaw = self.calculate_head_pose(landmarks, frame.shape)
             if abs(yaw) > self.config.HEAD_YAW_THRESHOLD:
-                self.alert_manager.check_alert('head_pose', True, frame)
-                active_alerts.append('head_pose')
+                if self.alert_manager.check_alert('head_pose', True, frame):
+                    active_alerts.append('head_pose')
             else:
                 self.alert_manager.check_alert('head_pose', False, frame)
 
             # Eye gaze
             direction, ratio = self.calculate_eye_gaze(landmarks, gray)
             if direction in ("LEFT", "RIGHT"):
-                self.alert_manager.check_alert('eye_gaze', True, frame)
-                active_alerts.append('eye_gaze')
+                if self.alert_manager.check_alert('eye_gaze', True, frame):
+                    active_alerts.append('eye_gaze')
             else:
                 self.alert_manager.check_alert('eye_gaze', False, frame)
 
         # YOLO object detection
         detected, annotated_frame = self.detect_objects(frame)
         frame = annotated_frame
-        for alert_type in ['phone', 'book']:
-            if detected.get(alert_type + 's', 0) > 0:
-                self.alert_manager.check_alert(alert_type, True, frame)
-                active_alerts.append(alert_type)
+        for alert_type, key in [('phone', 'phones'), ('book', 'books')]:
+            if detected.get(key, 0) > 0:
+                if self.alert_manager.check_alert(alert_type, True, frame):
+                    active_alerts.append(alert_type)
             else:
                 self.alert_manager.check_alert(alert_type, False, frame)
 
@@ -193,11 +255,16 @@ class DetectionSystem:
 
     # ---------------- STATUS FOR FRONTEND ----------------
     def get_status(self):
+        active_now = [
+            atype
+            for atype, st in self.alert_manager.alert_states.items()
+            if st.get('phase') in ('arming', 'triggered')
+        ]
         return {
             "terminated": False,
             "reason": "",
             "warning": None,
-            "active_alerts": [a['type'] for a in self.alert_manager.alert_history]
+            "active_alerts": active_now
         }
 
     # ---------------- HELPERS ----------------
@@ -232,8 +299,10 @@ class DetectionSystem:
         ])
 
         try:
-            success, rvec, tvec = cv2.solvePnP(model_points, image_points, camera_matrix, dist_coeffs,
-                                               flags=cv2.SOLVEPNP_ITERATIVE)
+            success, rvec, tvec = cv2.solvePnP(
+                model_points, image_points, camera_matrix, dist_coeffs,
+                flags=cv2.SOLVEPNP_ITERATIVE
+            )
         except Exception:
             return 0.0
         if not success:
@@ -258,9 +327,11 @@ class DetectionSystem:
             left = thresh[:, :ww//2]
             right = thresh[:, ww//2:]
             return (cv2.countNonZero(left)+1)/(cv2.countNonZero(right)+1)
+
         left_ratio = get_ratio([36, 37, 38, 39, 40, 41])
         right_ratio = get_ratio([42, 43, 44, 45, 46, 47])
-        hratio = (left_ratio + right_ratio)/2
+        hratio = (left_ratio + right_ratio) / 2.0
+
         direction = "CENTER"
         if hratio < 0.8:
             direction = "RIGHT"
@@ -283,17 +354,34 @@ class DetectionSystem:
                 detected['books'] = names.count('book')
                 annotated = results[0].plot()
         except Exception:
+            # YOLO may fail gracefully; keep original frame
             pass
         return detected, annotated
 
     def draw_stats(self, frame):
         try:
             h, w = frame.shape[:2]
-            cv2.rectangle(frame, (10, h - 100), (260, h - 10), (0,0,0), -1)
+            cv2.rectangle(frame, (10, h - 100), (280, h - 10), (0, 0, 0), -1)
             cv2.putText(frame, f"Session Time: {int(time.time() - self.stats['session_start'])}s",
-                        (15, h-70), self.config.FONT, 0.5, (255,255,255), 1)
+                        (15, h-70), self.config.FONT, 0.5, (255, 255, 255), 1)
             cv2.putText(frame, f"Active Alerts: {len(self.alert_manager.alert_history)}",
-                        (15, h-40), self.config.FONT, 0.5, (0,255,255), 1)
+                        (15, h-40), self.config.FONT, 0.5, (0, 255, 255), 1)
         except Exception:
             pass
 
+
+# --------------- Optional: quick camera loop for local testing ---------------
+if __name__ == "__main__":
+    ds = DetectionSystem(process_with_camera=True, camera_index=0)
+    try:
+        while True:
+            ok, frame = ds.cap.read()
+            if not ok:
+                break
+            frame, _ = ds.process_frame(frame)
+            cv2.imshow("Proctoring (time-gated)", frame)
+            if cv2.waitKey(1) & 0xFF == 27:  # ESC to exit
+                break
+    finally:
+        ds.stop_camera()
+        cv2.destroyAllWindows()

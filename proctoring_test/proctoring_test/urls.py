@@ -1,7 +1,7 @@
 ﻿from django.urls import path, include
 from proctor import views
 from django.contrib import admin
-
+from django.views.generic import RedirectView
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', views.homepage, name='home'),
@@ -21,7 +21,7 @@ urlpatterns = [
     path('student_dashboard/', views.student_dashboard, name='student_dashboard'),
     path('student/quizzes/', views.available_quizzes, name='available_quizzes'),
     path('student/take-quiz/<int:quiz_id>/', views.take_quiz, name='take_quiz'),
-
+    path('student/logs/', views.student_logs, name='student_logs'),  # fixed to be consistent
     # Webcam app
     path('webcam/', include('webcam.urls')),
     # Face capture
@@ -42,11 +42,15 @@ urlpatterns = [
 
     # AI Proctor MJPEG stream
     path('quiz/<int:quiz_id>/ai_stream/', views.quiz_ai_stream, name='quiz_ai_stream'),
-path("profile/", views.profile, name="profile"),
+    path("profile/", views.profile, name="profile"),
     # AI Proctor status JSON endpoint
     path('quiz/<int:quiz_id>/ai_status/', views.quiz_ai_status, name='quiz_ai_status'),
-        path("quiz/<int:quiz_id>/results/", views.quiz_results, name="quiz_results"),
-         path("teachers/", views.teacher_list, name="teacher_list"),
+    path("quiz/<int:quiz_id>/results/", views.quiz_results, name="quiz_results"),
+    path("teachers/", views.teacher_list, name="teacher_list"),
     path("students/", views.student_list, name="student_list"),
-      path('teacher/<int:quiz_id>/', views.proctor_logs, name='proctor_logs'),
+  
+    path('teacher/<int:quiz_id>/', views.proctor_logs, name='proctor_logs'),
+    path('teacher/<int:quiz_id>/', views.proctor_logs_partial, name='proctor_logs_partial'),
+    path('teacher/', views.proctor_logs_all, name='proctor_logs_all'),
+
 ]

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block content %}
+<h2 class="text-xl font-semibold mb-4">Proctoring Logs — All Exams</h2>
+
+<form method="get" class="mb-4 flex gap-2 items-end">
+  <div>
+    <label class="block text-xs text-gray-600">Exam</label>
+    <select name="quiz" class="border rounded px-2 py-1">
+      <option value="all" {% if selected_quiz == "all" %}selected{% endif %}>All</option>
+      {% for q in quizzes %}
+      <option value="{{ q.id }}" {% if selected_quiz|stringformat:"s" == q.id|stringformat:"s" %}selected{% endif %}>{{ q.title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="block text-xs text-gray-600">Student</label>
+    <input name="student" value="{{ request.GET.student }}" class="border rounded px-2 py-1">
+  </div>
+  <div>
+    <label class="block text-xs text-gray-600">Type</label>
+    <input name="type" value="{{ request.GET.type }}" class="border rounded px-2 py-1">
+  </div>
+  <button class="px-3 py-2 bg-gray-700 text-white rounded">Filter</button>
+</form>
+
+<div class="overflow-x-auto bg-white shadow rounded">
+  <table class="min-w-full text-sm">
+    <thead class="bg-gray-100 sticky top-0">
+      <tr>
+        <th class="px-3 py-2 text-left">Time</th>
+        <th class="px-3 py-2 text-left">Exam</th>
+        <th class="px-3 py-2 text-left">Student</th>
+        <th class="px-3 py-2 text-left">Type</th>
+        <th class="px-3 py-2 text-left">Severity</th>
+        <th class="px-3 py-2 text-left">Message</th>
+        <th class="px-3 py-2 text-left">Snapshot</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in events %}
+      <tr class="border-t hover:bg-gray-50">
+        <td class="px-3 py-2 whitespace-nowrap" title="{{ e.created_at|date:'c' }}">{{ e.created_at|timesince }} ago</td>
+        <td class="px-3 py-2">
+          <a class="text-blue-700 underline" href="{% url 'proctor_logs' e.quiz_id %}">{{ e.quiz.title }}</a>
+        </td>
+        <td class="px-3 py-2">{{ e.student.username }}</td>
+        <td class="px-3 py-2"><span class="px-2 py-0.5 rounded bg-gray-100 border">{{ e.event_type }}</span></td>
+        <td class="px-3 py-2">
+          {% with s=e.severity %}
+            <span class="px-2 py-0.5 rounded
+              {% if s == 'high' %} bg-red-100 text-red-700 border border-red-200
+              {% elif s == 'medium' %} bg-yellow-100 text-yellow-800 border border-yellow-200
+              {% else %} bg-green-100 text-green-800 border border-green-200 {% endif %}">
+              {{ s|title }}
+            </span>
+          {% endwith %}
+        </td>
+        <td class="px-3 py-2 max-w-[40ch] truncate" title="{{ e.message }}">{{ e.message }}</td>
+        <td class="px-3 py-2">
+          {% if e.frame %}
+            <a href="{{ e.frame.url }}" target="_blank"><img src="{{ e.frame.url }}" class="h-12 w-16 object-cover rounded"></a>
+          {% else %} — {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td class="px-3 py-4 text-gray-500" colspan="7">No events yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

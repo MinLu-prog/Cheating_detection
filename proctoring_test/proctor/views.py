@@ -1514,26 +1514,38 @@ from django.utils.dateparse import parse_datetime
 from django.http import HttpResponse
 from .models import ProctorEvent
 
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from django.views.decorators.cache import never_cache
+from django.http import HttpResponse
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
+
 @login_required
+@never_cache
 def proctor_logs(request, quiz_id):
     if not is_teacher(request.user):
         messages.error(request, 'Access restricted to teachers.')
         return redirect('home')
 
     quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
-    qs = ProctorEvent.objects.filter(quiz=quiz)
+    qs = ProctorEvent.objects.filter(quiz=quiz).select_related("student").order_by("-created_at")
 
     # filters (optional)
     student = request.GET.get('student')
     if student:
         qs = qs.filter(student__username=student)
+
     evt_type = request.GET.get('type')
     if evt_type:
         qs = qs.filter(event_type=evt_type)
+
     since = request.GET.get('since')  # ISO-8601
     if since:
         dt = parse_datetime(since)
         if dt:
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.get_current_timezone())
             qs = qs.filter(created_at__gte=dt)
 
     fmt = request.GET.get('format')
@@ -1547,7 +1559,151 @@ def proctor_logs(request, quiz_id):
             w.writerow([e.created_at.isoformat(), e.student.username, e.event_type, e.severity, e.message, e.metadata])
         return resp
 
+    # initial render caps to keep page snappy
     return render(request, 'proctor/proctor_logs.html', {
         'quiz': quiz,
-        'events': qs.select_related('student')[:1000],  # cap to keep page snappy
+        'events': qs[:1000],
+    })
+
+@login_required
+@never_cache
+def proctor_logs_partial(request, quiz_id):
+    """Returns just the <tbody> rows so HTMX can poll for fresh items."""
+    if not is_teacher(request.user):
+        return HttpResponse(status=403)
+
+    quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+    qs = ProctorEvent.objects.filter(quiz=quiz).select_related("student").order_by("-created_at")
+
+    # if client passes latest_ts, only send newer rows
+    latest_ts = request.GET.get("latest_ts")
+    if latest_ts:
+        dt = parse_datetime(latest_ts)
+        if dt:
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.get_current_timezone())
+            qs = qs.filter(created_at__gt=dt)
+
+    events = qs[:200]  # small batch for polling
+    return render(request, 'proctor/_proctor_rows.html', {'events': events})
+
+@login_required
+@never_cache
+def proctor_logs_all(request):
+    if not is_teacher(request.user):
+        messages.error(request, 'Access restricted to teachers.')
+        return redirect('home')
+
+    qs = ProctorEvent.objects.filter(quiz__teacher=request.user).select_related("student","quiz").order_by("-created_at")
+
+    # optional filters
+    quiz_id = request.GET.get("quiz")
+    if quiz_id and quiz_id != "all":
+        qs = qs.filter(quiz_id=quiz_id)
+
+    student = request.GET.get('student')
+    if student:
+        qs = qs.filter(student__username=student)
+
+    evt_type = request.GET.get('type')
+    if evt_type:
+        qs = qs.filter(event_type=evt_type)
+
+    return render(request, "proctor/proctor_logs_all.html", {
+        "events": qs[:1000],
+        "quizzes": Quiz.objects.filter(teacher=request.user).only("id","title").order_by("title"),
+        "selected_quiz": quiz_id or "all",
+    })
+
+
+from .models import Quiz, ProctorEvent  # adjust import paths if different
+
+
+def _quiz_ids_student_attended(user):
+    """
+    Try to collect quiz IDs that `user` actually attended.
+    We probe a few common schemas and fall back to ProctorEvent existence.
+    """
+    quiz_ids = set()
+
+    # 1) Submission model (common)
+    try:
+        from .models import Submission  # noqa
+        quiz_ids.update(
+            Submission.objects.filter(student=user).values_list("quiz_id", flat=True)
+        )
+    except Exception:
+        pass
+
+    # 2) Attempt model (alternative)
+    try:
+        from .models import Attempt  # noqa
+        quiz_ids.update(
+            Attempt.objects.filter(student=user).values_list("quiz_id", flat=True)
+        )
+    except Exception:
+        pass
+
+    # 3) Many-to-many (quiz.students)
+    try:
+        quiz_ids.update(
+            Quiz.objects.filter(students=user).values_list("id", flat=True)
+        )
+    except Exception:
+        pass
+
+    # 4) Fallback: any ProctorEvent for this student (means they participated)
+    if not quiz_ids:
+        quiz_ids.update(
+            ProctorEvent.objects.filter(student=user).values_list("quiz_id", flat=True).distinct()
+        )
+
+    return list(quiz_ids)
+
+@login_required
+def student_logs(request):
+    student = request.user
+
+    attended_quiz_ids = _quiz_ids_student_attended(student)
+    quizzes = Quiz.objects.filter(id__in=attended_quiz_ids).only("id", "title").order_by("title")
+
+    qs = (
+        ProctorEvent.objects
+        .filter(student=student, quiz_id__in=attended_quiz_ids)
+        .select_related("quiz")  # and student if you show it
+        .order_by("-created_at")
+    )
+
+    # Optional filters
+    quiz_id = request.GET.get("quiz")
+    if quiz_id and quiz_id != "all":
+        qs = qs.filter(quiz_id=quiz_id)
+
+    evt_type = request.GET.get("type")
+    if evt_type:
+        qs = qs.filter(event_type=evt_type)
+
+    since = request.GET.get("since")
+    if since:
+        dt = parse_datetime(since)
+        if dt:
+            qs = qs.filter(created_at__gte=dt)
+
+    # CSV export
+    if request.GET.get("format") == "csv":
+        import csv
+        from django.http import HttpResponse
+        resp = HttpResponse(content_type="text/csv")
+        resp["Content-Disposition"] = 'attachment; filename="my_proctor_logs.csv"'
+        w = csv.writer(resp)
+        w.writerow(["time", "exam", "type", "severity", "message"])
+        for e in qs.iterator():
+            w.writerow([e.created_at.isoformat(), getattr(e.quiz, "title", e.quiz_id), e.event_type, e.severity, e.message])
+        return resp
+
+    # Page render (cap to keep snappy)
+    return render(request, "proctor/student_logs.html", {
+        "logs": qs[:1000],
+        "quizzes": quizzes,
+        "selected_quiz": quiz_id or "all",
     })

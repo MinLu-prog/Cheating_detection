@@ -2373,3 +2373,17 @@
 2025-09-14T18:52:48.526883 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_185248.jpg
 2025-09-14T18:52:53.725230 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_185253.jpg
 2025-09-14T18:52:58.949579 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_185258.jpg
+2025-09-14T21:01:00.098017 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_210100.jpg
+2025-09-14T21:01:05.175035 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_210105.jpg
+2025-09-14T21:01:10.416148 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_210110.jpg
+2025-09-14T21:01:15.601931 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_210115.jpg
+2025-09-14T21:01:20.807787 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_210120.jpg
+2025-09-14T21:01:25.990979 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_210125.jpg
+2025-09-14T21:01:27.600353 - HEAD_POSE - proctoring_snapshots\head_pose_20250914_210127.jpg
+2025-09-14T21:01:31.204110 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_210131.jpg
+2025-09-14T21:19:54.738732 - EYE_GAZE - proctoring_snapshots\eye_gaze_20250914_211954.jpg
+2025-09-14T21:20:15.540023 - HEAD_POSE - proctoring_snapshots\head_pose_20250914_212015.jpg
+2025-09-14T21:20:27.454033 - NO_FACE - proctoring_snapshots\no_face_20250914_212027.jpg
+2025-09-14T21:20:40.014442 - HEAD_POSE - proctoring_snapshots\head_pose_20250914_212040.jpg
+2025-09-14T21:43:21.044869 - HEAD_POSE - proctoring_snapshots\head_pose_20250914_214321.jpg
+2025-09-14T21:43:47.935788 - HEAD_POSE - proctoring_snapshots\head_pose_20250914_214347.jpg

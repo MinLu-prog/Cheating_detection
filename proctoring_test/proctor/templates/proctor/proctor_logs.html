@@ -2,13 +2,25 @@
 {% block content %}
 <h2 class="text-xl font-semibold mb-4">Proctoring Logs — {{ quiz.title }}</h2>
 
-<div class="mb-4">
-  <a class="px-3 py-2 bg-blue-600 text-white rounded" href="?format=csv">Export CSV</a>
-</div>
+<form method="get" class="mb-4 flex gap-2 items-end">
+  <div>
+    <label class="block text-xs text-gray-600">Student</label>
+    <input name="student" value="{{ request.GET.student }}" class="border rounded px-2 py-1" placeholder="username">
+  </div>
+  <div>
+    <label class="block text-xs text-gray-600">Type</label>
+    <input name="type" value="{{ request.GET.type }}" class="border rounded px-2 py-1" placeholder="e.g. tab_switch">
+  </div>
+  <button class="px-3 py-2 bg-gray-700 text-white rounded">Filter</button>
+  <a class="px-3 py-2 bg-blue-600 text-white rounded ml-auto" href="?format=csv">Export CSV</a>
+  <label class="ml-4 inline-flex items-center gap-2 text-sm">
+    <input id="liveToggle" type="checkbox" class="h-4 w-4" checked> Live
+  </label>
+</form>
 
 <div class="overflow-x-auto bg-white shadow rounded">
   <table class="min-w-full text-sm">
-    <thead class="bg-gray-100">
+    <thead class="bg-gray-100 sticky top-0">
       <tr>
         <th class="px-3 py-2 text-left">Time</th>
         <th class="px-3 py-2 text-left">Student</th>
@@ -18,28 +30,42 @@
         <th class="px-3 py-2 text-left">Snapshot</th>
       </tr>
     </thead>
-    <tbody>
-      {% for e in events %}
-      <tr class="border-t">
-        <td class="px-3 py-2 whitespace-nowrap">{{ e.created_at|date:"Y-m-d H:i:s" }}</td>
-        <td class="px-3 py-2">{{ e.student.username }}</td>
-        <td class="px-3 py-2">{{ e.event_type }}</td>
-        <td class="px-3 py-2">{{ e.severity }}</td>
-        <td class="px-3 py-2">{{ e.message }}</td>
-        <td class="px-3 py-2">
-          {% if e.frame %}
-            <a href="{{ e.frame.url }}" target="_blank">
-              <img src="{{ e.frame.url }}" alt="snap" class="h-12 w-16 object-cover rounded">
-            </a>
-          {% else %}
-            —
-          {% endif %}
-        </td>
-      </tr>
-      {% empty %}
-      <tr><td class="px-3 py-4 text-gray-500" colspan="6">No events yet.</td></tr>
-      {% endfor %}
+    <tbody id="events-body">
+      {% include "proctor/_proctor_rows.html" with events=events %}
     </tbody>
   </table>
 </div>
+
+<script>
+  // simple poller: asks for rows newer than the first row's timestamp
+  const body = document.getElementById('events-body');
+  const liveToggle = document.getElementById('liveToggle');
+
+  function latestTS(){
+    const first = body.querySelector('tr[data-ts]');
+    return first ? first.getAttribute('data-ts') : '';
+  }
+
+  async function poll(){
+    if (!liveToggle.checked) return;
+    const url = "{% url 'proctor_logs_partial' quiz.id %}" + "?latest_ts=" + encodeURIComponent(latestTS());
+    try {
+      const resp = await fetch(url, {headers:{'HX-Request':'true'}});
+      if (resp.ok) {
+        const html = await resp.text();
+        if (html.trim()) {
+          // prepend new rows
+          const temp = document.createElement('tbody');
+          temp.innerHTML = html;
+          while (temp.firstChild) body.prepend(temp.firstChild);
+          // cap rows
+          const rows = body.querySelectorAll('tr[data-ts]');
+          for (let i=1000; i<rows.length; i++) rows[i].remove();
+        }
+      }
+    } catch(e) { /* ignore network blips */ }
+  }
+
+  setInterval(poll, 3000); // every 3s
+</script>
 {% endblock %}
