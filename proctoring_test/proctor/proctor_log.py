@@ -53,3 +53,58 @@ def log_event(user, quiz, event_type, message='', severity='warn', metadata=None
         # If a race happens during first boot, don’t bring the app down
         logger.warning("ProctorEvent write skipped (DB not ready): %s", e)
         return None
+
+# proctor/proctor_log.py
+import base64, uuid, re
+import numpy as np
+import cv2
+from django.core.files.base import ContentFile
+from django.utils import timezone
+from .models import ProctorEvent
+
+def _b64_to_bytes(data_url_or_b64: str) -> bytes | None:
+    if not data_url_or_b64:
+        return None
+    # strip data URL prefix if present
+    m = re.match(r'^data:image/[^;]+;base64,(.*)$', data_url_or_b64)
+    b64 = m.group(1) if m else data_url_or_b64
+    try:
+        return base64.b64decode(b64)
+    except Exception:
+        return None
+
+def _npframe_to_jpeg_bytes(frame: np.ndarray) -> bytes | None:
+    try:
+        ok, buf = cv2.imencode('.jpg', frame)
+        return buf.tobytes() if ok else None
+    except Exception:
+        return None
+
+def log_event(user, quiz, event_type, message="", severity="warn",
+              metadata=None, frame: np.ndarray | None = None,
+              frame_b64: str | None = None, filename: str | None = None):
+    """
+    Create a ProctorEvent and (optionally) save a snapshot into ImageField.
+    - Pass either `frame` (np.ndarray, BGR) or `frame_b64` (data URL or raw b64).
+    """
+    pe = ProctorEvent(
+        quiz=quiz,
+        student=user,
+        event_type=event_type,
+        severity=severity,
+        message=message or "",
+        metadata=metadata or {},
+    )
+
+    img_bytes = None
+    if frame is not None:
+        img_bytes = _npframe_to_jpeg_bytes(frame)
+    elif frame_b64:
+        img_bytes = _b64_to_bytes(frame_b64)
+
+    if img_bytes:
+        name = filename or f"{event_type}_{timezone.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}.jpg"
+        pe.frame.save(name, ContentFile(img_bytes), save=False)
+
+    pe.save()
+    return pe

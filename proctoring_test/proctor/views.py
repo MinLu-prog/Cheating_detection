@@ -594,6 +594,21 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+import os, signal, json, logging
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
+from django.shortcuts import render, redirect, get_object_or_404
+from django.utils.timezone import now
+
+from .models import Quiz, Choice, StudentResponse  # adjust paths if needed
+
+logger = logging.getLogger(__name__)
+
+# If you manage a separate face process per user, ensure this dict exists somewhere central.
+face_process = {}  # {username: pid}
+
+
 @login_required
 def take_quiz(request, quiz_id):
     if not is_student(request.user):
@@ -603,7 +618,8 @@ def take_quiz(request, quiz_id):
     quiz = get_object_or_404(Quiz, id=quiz_id)
 
     # Check availability
-    if now() < quiz.open_time or now() > quiz.close_time:
+    now_ts = now()
+    if now_ts < quiz.open_time or now_ts > quiz.close_time:
         messages.error(request, "Quiz is not currently available.")
         return redirect('available_quizzes')
 
@@ -620,39 +636,31 @@ def take_quiz(request, quiz_id):
                     field_name = f"question_{question.id}"
 
                     # read posted value(s)
-                    # For checkboxes (multi-select) template should use name="question_<id>" and send multiple values
-                    posted_values = request.POST.getlist(field_name)  # returns [] if not present
-                    single_value = request.POST.get(field_name)  # None if not present
+                    posted_values = request.POST.getlist(field_name)  # [] if none (for checkboxes)
+                    single_value = request.POST.get(field_name)       # None if none (for radios/text)
 
-                    # normalize question type (support both naming schemes)
-                    qtype = (question.question_type or "").lower()
+                    # normalize type
+                    qtype = (question.question_type or "").lower().strip()
+
+                    # ---- MULTIPLE CHOICE ----
                     if qtype in ("multiple", "mcq", "multiplechoice", "multiple_choice"):
-                        # Could be single-radio or multiple-checkboxes depending on template.
-                        # If getlist returns length > 1 OR the input was checkbox, handle multiple selections.
                         if posted_values:
-                            # Posted values usually are choice IDs; iterate and create responses
+                            # multi-select (checkboxes) or repeated radios
                             for val in posted_values:
                                 try:
                                     cid = int(val)
-                                except (TypeError, ValueError):
-                                    logger.warning(f"Invalid choice id for question {question.id}: {val}")
-                                    continue
-                                # ensure choice exists and belongs to question
-                                try:
                                     choice = Choice.objects.get(id=cid, question=question)
-                                except Choice.DoesNotExist:
-                                    logger.warning(f"Choice id {cid} not found for question {question.id}")
-                                    continue
-
-                                StudentResponse.objects.create(
-                                    student=request.user,
-                                    quiz=quiz,
-                                    question=question,
-                                    selected_choice=choice
-                                )
-                                saved_any = True
+                                    StudentResponse.objects.create(
+                                        student=request.user,
+                                        quiz=quiz,
+                                        question=question,
+                                        selected_choice=choice
+                                    )
+                                    saved_any = True
+                                except (ValueError, Choice.DoesNotExist):
+                                    logger.warning(f"[MCQ] Invalid choice '{val}' for question {question.id}")
                         elif single_value:
-                            # fallback single selection (radio) -> single_value should be a choice id
+                            # single-selection (radio)
                             try:
                                 cid = int(single_value)
                                 choice = Choice.objects.get(id=cid, question=question)
@@ -663,32 +671,39 @@ def take_quiz(request, quiz_id):
                                     selected_choice=choice
                                 )
                                 saved_any = True
-                            except (TypeError, ValueError):
-                                logger.warning(f"Invalid single MCQ value for q {question.id}: {single_value}")
-                            except Choice.DoesNotExist:
-                                logger.warning(f"Choice {single_value} not found for q {question.id}")
+                            except (ValueError, Choice.DoesNotExist):
+                                logger.warning(f"[MCQ] Invalid single value '{single_value}' for question {question.id}")
                         else:
-                            # No answer posted for this question; optionally you can create an empty StudentResponse
-                            logger.info(f"No MCQ answer posted for question {question.id} by {request.user.username}")
+                            logger.info(f"[MCQ] No answer posted for question {question.id}")
 
+                    # ---- TRUE / FALSE ----
                     elif qtype in ("truefalse", "tf", "true_false"):
-                        # Expect a single value "True" or "False" or "true"/"false"
-                        answer = single_value
+                        # many setups also send a choice id for TF; we accept either raw text or id
+                        answer = single_value or (posted_values[0] if posted_values else None)
                         if answer is None:
-                            # maybe posted as list, take first
-                            answer = posted_values[0] if posted_values else None
-
-                        if answer is not None:
-                            StudentResponse.objects.create(
-                                student=request.user,
-                                quiz=quiz,
-                                question=question,
-                                text_answer=str(answer).strip()
-                            )
-                            saved_any = True
+                            logger.info(f"[TF] No answer posted for question {question.id}")
                         else:
-                            logger.info(f"No TF answer posted for question {question.id}")
+                            # If it's a choice id from your TF choices, store selected_choice;
+                            # otherwise store text_answer for safety.
+                            try:
+                                cid = int(answer)
+                                choice = Choice.objects.get(id=cid, question=question)
+                                StudentResponse.objects.create(
+                                    student=request.user,
+                                    quiz=quiz,
+                                    question=question,
+                                    selected_choice=choice
+                                )
+                            except (ValueError, Choice.DoesNotExist):
+                                StudentResponse.objects.create(
+                                    student=request.user,
+                                    quiz=quiz,
+                                    question=question,
+                                    text_answer=str(answer).strip()
+                                )
+                            saved_any = True
 
+                    # ---- FILL IN THE BLANK ----
                     elif qtype in ("fill", "blank", "fillintheblank", "fill_in_the_blank"):
                         answer = single_value or (posted_values[0] if posted_values else "")
                         if answer is not None:
@@ -700,24 +715,73 @@ def take_quiz(request, quiz_id):
                             )
                             saved_any = True
                         else:
-                            logger.info(f"No fill answer for question {question.id}")
-                    elif qtype in ("match", "matching"):  # support both spellings
-                            raw_answer = single_value or (posted_values[0] if posted_values else "{}")
-                            try:
-                                parsed = json.loads(raw_answer) if raw_answer else {}
-                            except Exception:
-                                parsed = {}
-                                logger.warning(f"Invalid matching JSON for q {question.id}: {raw_answer}")
+                            logger.info(f"[FILL] No answer for question {question.id}")
 
-                            StudentResponse.objects.create(
-                                student=request.user,
-                                quiz=quiz,
-                                question=question,
-                                matched_pairs=parsed
-                            )
-                            saved_any = True
+                    # ---- MATCHING ----
+                    elif qtype in ("match", "matching"):
+                        raw_answer = single_value or (posted_values[0] if posted_values else "")
+                        parsed_json = {}
+                        try:
+                            parsed_json = json.loads(raw_answer) if raw_answer else {}
+                        except Exception:
+                            logger.warning(f"[MATCH] Invalid matching JSON for q {question.id}: {raw_answer}")
+
+                        # Normalize to a single structure:
+                        # {
+                        #   "pairs": [{"l": int, "r": int, "lText": str, "rText": str}, ...],
+                        #   "mapByLeftLabel": {"leftText": "rightText", ...},
+                        #   "raw": <original_payload>
+                        # }
+                        pairs = []
+                        map_by_left_label = {}
+
+                        if isinstance(parsed_json, dict) and "pairs" in parsed_json:
+                            # new shape from the template
+                            for p in parsed_json.get("pairs", []):
+                                try:
+                                    l = int(p.get("l"))
+                                    r = int(p.get("r"))
+                                except (TypeError, ValueError):
+                                    continue
+                                lText = str(p.get("lText", "")).strip()
+                                rText = str(p.get("rText", "")).strip()
+                                pairs.append({"l": l, "r": r, "lText": lText, "rText": rText})
+                                if lText and rText:
+                                    map_by_left_label[lText] = rText
+
+                        elif isinstance(parsed_json, dict) and parsed_json:
+                            # legacy: {"leftText": "rightText", ...}
+                            for k, v in parsed_json.items():
+                                lk = str(k).strip()
+                                rv = str(v).strip()
+                                if lk:
+                                    map_by_left_label[lk] = rv
+
+                        elif isinstance(parsed_json, list):
+                            # fallback: list of pairs like [["A","1"],["B","2"]]
+                            for item in parsed_json:
+                                if isinstance(item, (list, tuple)) and len(item) == 2:
+                                    lk = str(item[0]).strip()
+                                    rv = str(item[1]).strip()
+                                    if lk:
+                                        map_by_left_label[lk] = rv
+
+                        normalized_payload = {
+                            "pairs": pairs,                         # index-based if available
+                            "mapByLeftLabel": map_by_left_label,   # always useful for review
+                            "raw": parsed_json,                    # keep original for audit
+                        }
+
+                        StudentResponse.objects.create(
+                            student=request.user,
+                            quiz=quiz,
+                            question=question,
+                            matched_pairs=normalized_payload
+                        )
+                        saved_any = True
+
+                    # ---- UNKNOWN/OTHER ----
                     else:
-                        # Unknown/other question type: attempt to store text
                         answer = single_value or (posted_values[0] if posted_values else None)
                         if answer:
                             StudentResponse.objects.create(
@@ -728,7 +792,7 @@ def take_quiz(request, quiz_id):
                             )
                             saved_any = True
                         else:
-                            logger.info(f"No answer posted for unknown-type question {question.id}")
+                            logger.info(f"[OTHER] No answer posted for question {question.id}")
 
                 # --- stop face process if exists (your existing logic) ---
                 pid = face_process.get(request.user.username)
@@ -755,8 +819,9 @@ def take_quiz(request, quiz_id):
     return render(request, "proctor/take_quiz.html", {
         "quiz": quiz,
         "questions": quiz.questions.all().order_by("order"),
-        "time_limit": quiz.time_limit * 60,  # in seconds
+        "time_limit": quiz.time_limit * 60,  # seconds
     })
+
 
 import cv2, numpy as np, base64, os
 from django.views.decorators.csrf import csrf_exempt
@@ -1624,6 +1689,7 @@ def proctor_logs_all(request):
         "quizzes": Quiz.objects.filter(teacher=request.user).only("id","title").order_by("title"),
         "selected_quiz": quiz_id or "all",
     })
+
 
 
 from .models import Quiz, ProctorEvent  # adjust import paths if different

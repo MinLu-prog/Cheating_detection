@@ -2,6 +2,9 @@
 from proctor import views
 from django.contrib import admin
 from django.views.generic import RedirectView
+from django.conf import settings
+from django.conf.urls.static import static
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', views.homepage, name='home'),
@@ -55,3 +58,5 @@ urlpatterns = [
     path('teacher/', views.proctor_logs_all, name='proctor_logs_all'),
 
 ]
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,30 +1,28 @@
-# views.py
-import base64
-import cv2
-import numpy as np
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from .ai_proctor import DetectionSystem
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
-import base64, numpy as np, cv2, traceback
-# Initialize a single DetectionSystem instance (keep it running)
-ds = DetectionSystem(process_with_camera=False)  # We'll feed frames from browser
-from proctor.proctor_log import log_event
 from django.shortcuts import get_object_or_404
+import base64, traceback
+import numpy as np
+import cv2
+
+from .ai_proctor import DetectionSystem
+from proctor.proctor_log import log_event
 from proctor.models import Quiz
-# -------------------- Receive frames from browser --------------------
+
+# Reuse a single detector instance (avoid reloading models each request)
+ds = DetectionSystem(process_with_camera=False)
+
 
 @csrf_exempt
 def quiz_ai_stream(request, quiz_id):
     """
-    Accepts a base64 frame from browser and processes it.
-    Expects form field 'frame' containing a data URL (data:image/jpeg;base64,...).
+    Accept a base64 data URL from the browser (POST 'frame'),
+    run AI proctoring, log alerts (with snapshots), and return
+    the annotated frame as a base64 data URL along with meta.
     """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=400)
 
-    # Must be authenticated to log against a student
     if not request.user.is_authenticated:
         return JsonResponse({"error": "auth_required"}, status=403)
 
@@ -35,14 +33,23 @@ def quiz_ai_stream(request, quiz_id):
         if not data or "," not in data:
             return JsonResponse({"error": "missing_or_invalid_frame"}, status=400)
 
-        # Decode base64 image (data URL)
-        _, encoded = data.split(",", 1)
-        img_bytes = base64.b64decode(encoded)
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # BGR uint8
+        # ---- Decode base64 image (data URL) ----
+        try:
+            _, encoded = data.split(",", 1)
+            img_bytes = base64.b64decode(encoded)
+            nparr = np.frombuffer(img_bytes, np.uint8)
+            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # BGR
+        except Exception:
+            log_event(
+                request.user, quiz, "decode_error",
+                message="Failed to base64-decode or imdecode frame",
+                severity="error",
+                metadata={"where": "quiz_ai_stream"},
+                frame_b64=data,
+            )
+            return JsonResponse({"error": "decode_failed"}, status=400)
 
         if frame is None:
-            # Log once per ~3s via throttle in log_event()
             log_event(
                 request.user, quiz, "decode_error",
                 message="cv2.imdecode returned None",
@@ -52,30 +59,35 @@ def quiz_ai_stream(request, quiz_id):
             )
             return JsonResponse({"error": "decode_failed"}, status=400)
 
-        # Process frame with DetectionSystem
-        annotated_frame, meta = ds.process_frame(frame)  # meta may contain active_alerts/terminated/etc.
+        # ---- Run AI Proctor detection ----
+        annotated_frame, active_alerts = ds.process_frame(frame)
+        meta = {
+            "active_alerts": active_alerts,
+            **(ds.get_status() or {}),  # may include terminated/reason/warning
+        }
 
-        # Log active alerts (throttled)
-        if isinstance(meta, dict):
-            for code in meta.get("active_alerts", []):
-                log_event(
-                    request.user, quiz, code,
-                    message=f"Alert: {code}",
-                    severity="warn",
-                    metadata=meta,
-                )
-            # If detector decided to terminate, log as error (include a snapshot once)
-            if meta.get("terminated"):
-                log_event(
-                    request.user, quiz, "terminated",
-                    message=meta.get("reason", "terminated"),
-                    severity="error",
-                    metadata=meta,
-                    frame_b64=data,  # snapshot helps later review
-                )
+        # ---- Log alerts WITH SNAPSHOT ----
+        for code in meta.get("active_alerts", []):
+            log_event(
+                request.user, quiz, code,
+                message=f"Alert: {code}",
+                severity="warn",
+                metadata=meta,
+                frame=annotated_frame,   # <- save snapshot to ImageField
+            )
 
-        # Return annotated frame as base64 (JPEG)
-        ok, buffer = cv2.imencode('.jpg', annotated_frame)
+        # ---- Log termination (if any) WITH SNAPSHOT ----
+        if meta.get("terminated"):
+            log_event(
+                request.user, quiz, "terminated",
+                message=meta.get("reason", "terminated"),
+                severity="error",
+                metadata=meta,
+                frame=annotated_frame,   # <- include snapshot
+            )
+
+        # ---- Encode annotated frame to base64 for the browser ----
+        ok, buffer = cv2.imencode(".jpg", annotated_frame)
         if not ok:
             log_event(
                 request.user, quiz, "encode_error",
@@ -85,37 +97,32 @@ def quiz_ai_stream(request, quiz_id):
             )
             return JsonResponse({"error": "encode_failed"}, status=500)
 
-        frame_b64 = base64.b64encode(buffer).decode('utf-8')
-        return JsonResponse({"frame": f"data:image/jpeg;base64,{frame_b64}"})
+        frame_b64 = base64.b64encode(buffer).decode("utf-8")
+        return JsonResponse({
+            "frame": f"data:image/jpeg;base64,{frame_b64}",
+            "meta": meta
+        })
 
     except Exception as e:
-        # Log unexpected server-side exception (throttled)
+        # Unexpected server-side exception
         log_event(
             request.user, quiz, "stream_error",
             message=str(e),
             severity="error",
             metadata={"where": "quiz_ai_stream", "trace": traceback.format_exc()[:1500]},
-            frame_b64=request.POST.get("frame"),  # optional; safe due to throttle
+            frame_b64=request.POST.get("frame"),  # best-effort attach original
         )
-        return JsonResponse(
-            {"error": "server_exception", "detail": repr(e)},
-            status=500
-        )
-# -------------------- AI status polling --------------------
+        return JsonResponse({"error": "server_exception", "detail": repr(e)}, status=500)
+
 def quiz_ai_status(request, quiz_id):
-    """
-    Returns current AI status for frontend polling.
-    Example keys: active_alerts, terminated, reason, etc.
-    """
-    # If not authenticated we can't attach events to a student
+    """Return current AI status for frontend polling."""
     if not request.user.is_authenticated:
         return JsonResponse({"error": "auth_required"}, status=403)
 
     quiz = get_object_or_404(Quiz, id=quiz_id)
-
     status = ds.get_status() or {}
 
-    # Log current alerts (throttled, so polling won't spam)
+    # Log alerts on polling
     for code in status.get("active_alerts", []):
         log_event(
             request.user, quiz, code,
@@ -133,7 +140,6 @@ def quiz_ai_status(request, quiz_id):
         )
 
     return JsonResponse(status)
-
 
 import os
 import time
