@@ -4,11 +4,8 @@
 
 {% block content %}
 <div class="max-w-5xl mx-auto p-6 space-y-6 page-transition"
-     x-data="{
-        activeTab: 'profile',
-        searchQuery: '',
-        statusFilter: 'all'
-     }">
+     x-data="profilePage()"
+     x-init="init()">
 
   <!-- ✅ Profile Card -->
   <div class="bg-white rounded-lg shadow-lg overflow-hidden">
@@ -51,21 +48,24 @@
     <div class="border-b border-gray-200 px-6">
       <ul class="flex space-x-8 text-sm font-medium">
         <li>
-          <a href="#" @click.prevent="activeTab = 'profile'"
+          <a href="#"
+             @click.prevent="setTab('profile')"
              :class="activeTab === 'profile' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
              class="transition-all duration-300 ease-in-out">
             {% lucide "user" class="w-4 h-4 inline mr-1" %} Profile
           </a>
         </li>
         <li>
-          <a href="#" @click.prevent="activeTab = 'quizzes'"
+          <a href="#"
+             @click.prevent="setTab('quizzes')"
              :class="activeTab === 'quizzes' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
              class="transition-all duration-300 ease-in-out">
             {% lucide "file-text" class="w-4 h-4 inline mr-1" %} My Quizzes
           </a>
         </li>
         <li>
-          <a href="#" @click.prevent="activeTab = 'history'"
+          <a href="#"
+             @click.prevent="setTab('history')"
              :class="activeTab === 'history' ? 'pb-3 border-b-2 border-green-500 text-green-600' : 'pb-3 text-gray-500 hover:text-green-600'"
              class="transition-all duration-300 ease-in-out">
             {% lucide "clock" class="w-4 h-4 inline mr-1" %} History
@@ -210,9 +210,13 @@
                     </a>
 
                     <!-- Delete -->
-                    <form method="post" action="{% url 'delete_quiz' quiz.id %}"
-                          class="quiz-delete-form" data-quiz-id="{{ quiz.id }}">
+                    <form method="post"
+                          action="{% url 'delete_quiz' quiz.id %}"
+                          class="quiz-delete-form"
+                          data-quiz-id="{{ quiz.id }}">
                       {% csrf_token %}
+                      {# Keep current qpage and reopen the My Quizzes tab after redirect #}
+                      <input type="hidden" name="next" value="{{ request.get_full_path }}#quizzes">
                       <button type="submit"
                               class="p-2 rounded-lg bg-red-600 text-white hover:bg-red-700 shadow-sm transition"
                               title="Delete">
@@ -281,39 +285,61 @@
   transform: translateY(10px);
   transition: opacity 0.6s ease, transform 0.6s ease;
 }
-.page-transition.loaded {
-  opacity: 1;
-  transform: translateY(0);
-}
+.page-transition.loaded { opacity: 1; transform: translateY(0); }
+
 /* ✅ Row fade-out when deleting quiz */
 @keyframes fadeOut {
   from { opacity: 1; transform: translateX(0); }
-  to { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 0; transform: translateX(-20px); }
 }
 .animate-fadeOut { animation: fadeOut 0.7s forwards; }
 </style>
 
 <script>
-document.addEventListener("DOMContentLoaded", () => {
-  const container = document.querySelector(".page-transition");
-  if (container) container.classList.add("loaded");
+// Alpine component factory: hash-aware, avoids touching __x internals.
+function profilePage() {
+  return {
+    activeTab: 'profile',
+    searchQuery: '',
+    statusFilter: 'all',
 
-  // ✅ Auto-open quizzes tab if URL has #quizzes
-  if (window.location.hash === "#quizzes") {
-    const alpineScope = document.querySelector("[x-data]").__x.$data;
-    alpineScope.activeTab = "quizzes";
+    init() {
+      // 1) On load: open 'quizzes' if the hash asks for it
+      this.activeTab = (window.location.hash === '#quizzes') ? 'quizzes' : 'profile';
+
+      // 2) Keep hash in sync when user changes tabs
+      this.$watch('activeTab', (val) => {
+        if (val === 'quizzes') {
+          if (window.location.hash !== '#quizzes') window.location.hash = 'quizzes';
+        } else {
+          // Clear hash without scrolling
+          history.replaceState(null, '', window.location.pathname + window.location.search);
+        }
+      });
+
+      // 3) If hash changes (e.g., browser back/forward), reflect in UI
+      window.addEventListener('hashchange', () => {
+        if (window.location.hash === '#quizzes') this.activeTab = 'quizzes';
+        else this.activeTab = 'profile';
+      });
+
+      // Fade-in page
+      const container = document.querySelector('.page-transition');
+      if (container) container.classList.add('loaded');
+
+      // Delete fade-out
+      document.querySelectorAll('.quiz-delete-form').forEach(form => {
+        form.addEventListener('submit', (e) => {
+          e.preventDefault();
+          const row = form.closest('tr');
+          row.classList.add('animate-fadeOut');
+          setTimeout(() => form.submit(), 700);
+        });
+      });
+    },
+
+    setTab(tab) { this.activeTab = tab; }
   }
-
-  // Quiz delete fade-out
-  document.querySelectorAll(".quiz-delete-form").forEach(form => {
-    form.addEventListener("submit", function(e) {
-      e.preventDefault();
-      const row = form.closest("tr");
-      row.classList.add("animate-fadeOut");
-      setTimeout(() => form.submit(), 700);
-    });
-  });
-});
-
+}
 </script>
 {% endblock %}

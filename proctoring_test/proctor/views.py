@@ -84,55 +84,47 @@ def login_view(request):
 
     return render(request, 'proctor/login.html')
 # views.py
-from django.core.paginator import Paginator
-
 @login_required
 def profile(request):
     role = "User"
     base_template = "base.html"
 
+    # Default fallbacks
+    user_quizzes_qs = Quiz.objects.none()
+    published_count = 0
+
+    # Role routing
     if request.user.groups.filter(name="Teachers").exists():
         role = "Teacher"
         base_template = "base.html"
         user_quizzes_qs = Quiz.objects.filter(teacher=request.user).order_by('-created_at')
         published_count = user_quizzes_qs.filter(status='published').count()
 
-        # NEW: paginate the table only
-        paginator = Paginator(user_quizzes_qs, 10)  # 10 per page (adjust if you want)
-        qpage = request.GET.get("qpage")
-        quizzes_page = paginator.get_page(qpage)
-
     elif request.user.groups.filter(name="Students").exists():
         role = "Student"
         base_template = "base_student.html"
-        user_quizzes_qs = Quiz.objects.none()
-        published_count = 0
-        paginator = Paginator(user_quizzes_qs, 10)
-        quizzes_page = paginator.get_page(1)
+        # Students don't own quizzes in this view; keep empty queryset
+
     elif request.user.groups.filter(name="Admins").exists():
         role = "Admin"
         base_template = "base.html"
         user_quizzes_qs = Quiz.objects.all().order_by('-created_at')
         published_count = user_quizzes_qs.filter(status='published').count()
-        paginator = Paginator(user_quizzes_qs, 10)
-        qpage = request.GET.get("qpage")
-        quizzes_page = paginator.get_page(qpage)
-    else:
-        user_quizzes_qs = Quiz.objects.none()
-        published_count = 0
-        paginator = Paginator(user_quizzes_qs, 10)
-        quizzes_page = paginator.get_page(1)
+
+    # Paginate (table only)
+    paginator = Paginator(user_quizzes_qs, 10)  # 10 per page
+    qpage = request.GET.get("qpage")
+    quizzes_page = paginator.get_page(qpage)
 
     context = {
-        "user_quizzes": user_quizzes_qs,   # keep queryset for counts in the top “Profile” tab
-        "quizzes_page": quizzes_page,      # use this for the paginated table
+        "user_quizzes": user_quizzes_qs,   # for counts
+        "quizzes_page": quizzes_page,      # paginated table
         "published_count": published_count,
         "role": role,
         "base_template": base_template,
         "now": timezone.now(),
     }
     return render(request, "proctor/profile.html", context)
-
  #Logout view
 @login_required
 def logout_view(request):
@@ -1342,20 +1334,65 @@ def teacher_quiz_results(request, quiz_id):
         "quiz": quiz,
         "student_results": student_results
     })
+# views.py
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponseForbidden, HttpResponseNotAllowed
+from django.shortcuts import get_object_or_404, redirect
+from django.urls import reverse
+
+from .models import Quiz
 
 
 @login_required
-def delete_quiz(request, quiz_id):
-    if request.method == 'POST':
-        quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
-        quiz_title = quiz.title
-        quiz.delete()
-        messages.success(request, f'Quiz "{quiz_title}" has been deleted.')
-        return redirect('teacher_dashboard')  # 🔥 Redirect back to dashboard
-    else:
-        messages.warning(request, 'Invalid request method.')
-        return redirect('teacher_dashboard')
-    
+def delete_quiz(request, quiz_id: int):
+    """
+    Delete a quiz.
+    - Teachers can delete only their own quizzes.
+    - Admins (superuser or in 'Admins' group) can delete any quiz.
+    - Redirects back to the same pagination page & opens #quizzes tab.
+    """
+    if request.method != "POST":
+        return HttpResponseNotAllowed(["POST"])
+
+    user = request.user
+    is_admin = user.is_superuser or user.groups.filter(name__in=["Admins"]).exists()
+    is_teacher = user.groups.filter(name="Teachers").exists()
+
+    if not (is_teacher or is_admin):
+        return HttpResponseForbidden("You don't have permission to delete this quiz.")
+
+    # Base queryset is all; restrict for teachers
+    qs = Quiz.objects.all()
+    if is_teacher and not is_admin:
+        qs = qs.filter(teacher=user)
+
+    quiz = get_object_or_404(qs, pk=quiz_id)
+
+    title = quiz.title
+    quiz.delete()
+    messages.success(request, f'Quiz "{title}" has been deleted.')
+
+    # Prefer `next` hidden input to preserve ?qpage and #quizzes explicitly
+    next_url = request.POST.get("next")
+    if next_url:
+        return redirect(next_url)
+
+    # Fallback to Referer; force #quizzes so the tab stays open
+    referer = request.META.get("HTTP_REFERER")
+    if referer:
+        if "#quizzes" not in referer:
+            referer += "#quizzes"
+        return redirect(referer)
+
+    # Final fallback: dashboard/profile with #quizzes
+    try:
+        return redirect(reverse("teacher_dashboard") + "#quizzes")
+    except Exception:
+        # If no teacher_dashboard, send home and keep #quizzes
+        return redirect("/#quizzes")
+
+
 from django.shortcuts import get_object_or_404, redirect
 from .models import Quiz
 
