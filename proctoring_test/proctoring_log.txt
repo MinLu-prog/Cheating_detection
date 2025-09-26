@@ -2593,3 +2593,12 @@
 2025-09-17T02:39:48.491068 - NO_FACE - proctoring_snapshots\no_face_20250917_023948.jpg
 2025-09-17T02:39:53.494935 - NO_FACE - proctoring_snapshots\no_face_20250917_023953.jpg
 2025-09-17T02:39:58.984668 - NO_FACE - proctoring_snapshots\no_face_20250917_023958.jpg
+2025-09-22T13:18:52.196748 - NO_FACE - proctoring_snapshots\no_face_20250922_131852.jpg
+2025-09-22T13:18:57.197207 - NO_FACE - proctoring_snapshots\no_face_20250922_131857.jpg
+2025-09-22T13:19:04.704262 - NO_FACE - proctoring_snapshots\no_face_20250922_131904.jpg
+2025-09-22T13:19:09.710500 - NO_FACE - proctoring_snapshots\no_face_20250922_131909.jpg
+2025-09-22T13:19:15.201724 - NO_FACE - proctoring_snapshots\no_face_20250922_131915.jpg
+2025-09-22T13:19:20.294127 - NO_FACE - proctoring_snapshots\no_face_20250922_131920.jpg
+2025-09-22T13:19:26.292040 - NO_FACE - proctoring_snapshots\no_face_20250922_131926.jpg
+2025-09-22T13:19:31.700567 - NO_FACE - proctoring_snapshots\no_face_20250922_131931.jpg
+2025-09-22T13:19:36.710310 - NO_FACE - proctoring_snapshots\no_face_20250922_131936.jpg
