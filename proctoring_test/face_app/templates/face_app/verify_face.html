@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Verify Face</title>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+</head>
+<body>
+<h2>Verify Face</h2>
+<video id="video" width="640" height="480" autoplay muted></video>
+<canvas id="overlay" width="640" height="480"></canvas>
+<p id="status">Loading models...</p>
+
+<script>
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const context = overlay.getContext('2d');
+const status = document.getElementById('status');
+
+async function startVideo() {
+    try {
+        let stream = await navigator.mediaDevices.getUserMedia({ video: {} });
+        video.srcObject = stream;
+    } catch (err) {
+        console.error("Camera error:", err);
+    }
+}
+
+async function init() {
+    await faceapi.nets.ssdMobilenetv1.loadFromUri('/static/models');
+    await faceapi.nets.faceLandmark68Net.loadFromUri('/static/models');
+    await faceapi.nets.faceRecognitionNet.loadFromUri('/static/models');
+    status.innerText = "Models loaded. Starting camera...";
+    startVideo();
+}
+
+video.addEventListener('play', () => {
+    const interval = setInterval(async () => {
+        context.drawImage(video, 0, 0, video.width, video.height);
+        const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+        context.clearRect(0, 0, overlay.width, overlay.height);
+        faceapi.draw.drawDetections(overlay, detections);
+
+        if (detections.length > 0) {
+            status.innerText = "Face detected. Verifying...";
+            // Send first face descriptor as image
+            const canvas = document.createElement('canvas');
+            canvas.width = video.width;
+            canvas.height = video.height;
+            canvas.getContext('2d').drawImage(video, 0, 0, video.width, video.height);
+            const imageData = canvas.toDataURL('image/png');
+
+            fetch('/face/verify/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData })
+            })
+            .then(r => r.json())
+            .then(data => {
+                status.innerText = data.message;
+            })
+            .catch(err => console.error(err));
+
+            clearInterval(interval); // stop after one verification
+        } else {
+            status.innerText = "No face detected. Please position yourself in front of the camera.";
+        }
+    }, 500);
+});
+
+init();
+</script>
+</body>
+</html>

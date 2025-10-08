@@ -198,3 +198,34 @@ class ProctorEvent(models.Model):
 
     def __str__(self):
         return f"{self.created_at:%Y-%m-%d %H:%M:%S} · {self.student} · {self.event_type}"
+    
+from django.db import models
+from django.contrib.auth.models import User
+
+class ProctorAlert(models.Model):
+    ALERT_TYPES = [
+        ('head_pose', 'Head Pose'),
+        ('eye_gaze', 'Eye Gaze'),
+        ('multi_face', 'Multiple Faces'),
+        ('phone', 'Phone'),
+        ('book', 'Book'),
+        ('earphones', 'Earphones'),
+        ('no_face', 'No Face'),
+        ('audio_violation', 'Audio Violation'),
+        ('looking_down', 'Looking Down'),
+        ('looking_up', 'Looking Up'),
+        ('rapid_movement', 'Rapid Movement'),
+        ('face_verification', 'Face Verification (Mismatch)'),
+        ('face_verification_match', 'Face Verification (Match)'),
+    ]
+
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name="proctor_alerts")
+    quiz = models.ForeignKey('Quiz', on_delete=models.CASCADE)  # <- FK to Quiz
+    alert_type = models.CharField(max_length=50, choices=ALERT_TYPES)
+    timestamp = models.DateTimeField(auto_now_add=True)
+    snapshot_data = models.BinaryField(null=True, blank=True)
+    snapshot_mime = models.CharField(max_length=50, default='image/jpeg')
+    message = models.TextField(blank=True)
+
+    def __str__(self):
+        return f"[{self.student.username}] {self.alert_type} - {self.timestamp.strftime('%Y-%m-%d %H:%M:%S')}"

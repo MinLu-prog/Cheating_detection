@@ -42,7 +42,8 @@ INSTALLED_APPS = [
     'webcam',
     'tailwind',
     "lucide",
-    'theme'
+    'theme',
+    'face_app',
 ]
 
 MIDDLEWARE = [
@@ -141,4 +142,4 @@ SESSION_COOKIE_AGE = 10800  # 21600 seconds = 6 hours
 TAILWIND_APP_NAME = "theme"
 NPM_BIN_PATH = "C:/Program Files/nodejs/npm.cmd"
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = BASE_DIR

@@ -9,14 +9,6 @@
     <div class="flex justify-between items-center border-b pb-3 mb-6">
       <h2 class="text-xl font-bold text-gray-800">Edit Quiz</h2>
 
-      <!-- Delete is its own form (NOT nested) -->
-      <form id="delete-quiz-form" method="post" action="{% url 'delete_quiz' quiz.id %}" onsubmit="return confirm('Delete this quiz?');">
-        {% csrf_token %}
-        <button type="submit"
-                class="px-3 py-1.5 text-sm border border-red-500 text-red-600 rounded hover:bg-red-50">
-          Delete Quiz
-        </button>
-      </form>
     </div>
 
     <!-- Edit form -->

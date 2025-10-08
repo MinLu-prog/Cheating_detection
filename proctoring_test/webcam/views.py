@@ -1,25 +1,36 @@
-from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-import base64, traceback
-import numpy as np
+# views.py
+import base64
 import cv2
+import numpy as np
+import os
+import time
+import json
+import re
+import traceback
+import face_recognition
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.shortcuts import get_object_or_404
+from django.conf import settings
 
 from .ai_proctor import DetectionSystem
 from proctor.proctor_log import log_event
 from proctor.models import Quiz
+from .proctor_instance import get_detector
+from proctor.models import ProctorAlert
+from django.core.files.base import ContentFile
 
-# Reuse a single detector instance (avoid reloading models each request)
-ds = DetectionSystem(process_with_camera=False)
+
+
+
+# -------------------- DetectionSystem --------------------
+# Single instance, can process frames from browser
+ds = get_detector()
+
 
 
 @csrf_exempt
 def quiz_ai_stream(request, quiz_id):
-    """
-    Accept a base64 data URL from the browser (POST 'frame'),
-    run AI proctoring, log alerts (with snapshots), and return
-    the annotated frame as a base64 data URL along with meta.
-    """
     if request.method != "POST":
         return JsonResponse({"error": "POST required"}, status=400)
 
@@ -27,27 +38,37 @@ def quiz_ai_stream(request, quiz_id):
         return JsonResponse({"error": "auth_required"}, status=403)
 
     quiz = get_object_or_404(Quiz, id=quiz_id)
+     # --- Set student and quiz for DetectionSystem alerts ---
+    ds.current_student = request.user
+    ds.current_quiz_id = quiz.id
 
     try:
+        # -------------------- Load references per user --------------------
+        import os
+        from django.conf import settings
+
+
+        user_folder = os.path.join(str(settings.BASE_DIR), "faces", str(request.user.username))
+        print("[DEBUG] Looking for face references in:", user_folder)
+
+        if getattr(ds, "_loaded_user", None) != request.user.username:
+            if not ds.reference_encodings:
+                print(f"[DEBUG] Loading reference images for {request.user.username}...")
+                ds.load_reference_images(user_folder)
+                ds._loaded_user = request.user.username
+            else:
+                print(f"[DEBUG] Using cached encodings for {ds._loaded_user}")
+
+
+        # -------------------- Decode incoming frame --------------------
         data = request.POST.get("frame")
         if not data or "," not in data:
             return JsonResponse({"error": "missing_or_invalid_frame"}, status=400)
 
-        # ---- Decode base64 image (data URL) ----
-        try:
-            _, encoded = data.split(",", 1)
-            img_bytes = base64.b64decode(encoded)
-            nparr = np.frombuffer(img_bytes, np.uint8)
-            frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # BGR
-        except Exception:
-            log_event(
-                request.user, quiz, "decode_error",
-                message="Failed to base64-decode or imdecode frame",
-                severity="error",
-                metadata={"where": "quiz_ai_stream"},
-                frame_b64=data,
-            )
-            return JsonResponse({"error": "decode_failed"}, status=400)
+        _, encoded = data.split(",", 1)
+        img_bytes = base64.b64decode(encoded)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)  # BGR uint8
 
         if frame is None:
             log_event(
@@ -59,35 +80,108 @@ def quiz_ai_stream(request, quiz_id):
             )
             return JsonResponse({"error": "decode_failed"}, status=400)
 
-        # ---- Run AI Proctor detection ----
-        annotated_frame, active_alerts = ds.process_frame(frame)
-        meta = {
-            "active_alerts": active_alerts,
-            **(ds.get_status() or {}),  # may include terminated/reason/warning
-        }
+        # -------------------- Main frame processing --------------------
+        try:
+            annotated_frame, meta = ds.process_frame(frame)
+        except Exception as e:
+            print("[DEBUG] process_frame error:", e)
+            annotated_frame, meta = frame, {}
 
-        # ---- Log alerts WITH SNAPSHOT ----
-        for code in meta.get("active_alerts", []):
-            log_event(
-                request.user, quiz, code,
-                message=f"Alert: {code}",
-                severity="warn",
-                metadata=meta,
-                frame=annotated_frame,   # <- save snapshot to ImageField
-            )
+        # Log main alerts
+        if isinstance(meta, dict):
+            for code in meta.get("active_alerts", []):
+                log_event(
+                    request.user, quiz, code,
+                    message=f"Alert: {code}",
+                    severity="warn",
+                    metadata=meta,
+                )
+            if meta.get("terminated"):
+                log_event(
+                    request.user, quiz, "terminated",
+                    message=meta.get("reason", "terminated"),
+                    severity="error",
+                    metadata=meta,
+                    frame_b64=data,
+                )
 
-        # ---- Log termination (if any) WITH SNAPSHOT ----
-        if meta.get("terminated"):
-            log_event(
-                request.user, quiz, "terminated",
-                message=meta.get("reason", "terminated"),
-                severity="error",
-                metadata=meta,
-                frame=annotated_frame,   # <- include snapshot
-            )
+        # -------------------- Multi-face detection --------------------
+        if hasattr(ds, "process_multiface"):
+            try:
+                multi_meta = ds.process_multiface(frame)
+                if isinstance(multi_meta, dict):
+                    for code in multi_meta.get("active_alerts", []):
+                        log_event(
+                            request.user, quiz, code,
+                            message=f"Multi-face Alert: {code}",
+                            severity="warn",
+                            metadata=multi_meta,
+                        )
+                    if multi_meta.get("terminated"):
+                        log_event(
+                            request.user, quiz, "terminated",
+                            message=multi_meta.get("reason", "terminated"),
+                            severity="error",
+                            metadata=multi_meta,
+                            frame_b64=data,
+                        )
+            except Exception as e:
+                log_event(
+                    request.user, quiz, "multiface_error",
+                    message=str(e),
+                    severity="error",
+                    metadata={"where": "quiz_ai_stream_multiface"},
+                )
 
-        # ---- Encode annotated frame to base64 for the browser ----
-        ok, buffer = cv2.imencode(".jpg", annotated_frame)
+        # -------------------- Flexible head pose --------------------
+        if hasattr(ds, "detect_head_pose"):
+            try:
+                head_pose_meta = ds.detect_head_pose(frame)
+                if isinstance(head_pose_meta, dict):
+                    for code in head_pose_meta.get("active_alerts", []):
+                        log_event(
+                            request.user, quiz, code,
+                            message=f"Head Pose Alert: {code}",
+                            severity="warn",
+                            metadata=head_pose_meta,
+                        )
+            except Exception as e:
+                log_event(
+                    request.user, quiz, "headpose_error",
+                    message=str(e),
+                    severity="error",
+                    metadata={"where": "quiz_ai_stream_headpose"},
+                )
+
+        # -------------------- Audio detection --------------------
+        if hasattr(ds, "audio_detector"):
+            try:
+                audio_meta = ds.audio_detector.process_audio(request.user)
+                if isinstance(audio_meta, dict):
+                    for code in audio_meta.get("active_alerts", []):
+                        log_event(
+                            request.user, quiz, code,
+                            message=f"Audio Alert: {code}",
+                            severity="warn",
+                            metadata=audio_meta,
+                        )
+                    if audio_meta.get("terminated"):
+                        log_event(
+                            request.user, quiz, "terminated",
+                            message=audio_meta.get("reason", "terminated"),
+                            severity="error",
+                            metadata=audio_meta,
+                        )
+            except Exception as e:
+                log_event(
+                    request.user, quiz, "audio_error",
+                    message=str(e),
+                    severity="error",
+                    metadata={"where": "quiz_ai_stream_audio"},
+                )
+
+        # -------------------- Encode annotated frame --------------------
+        ok, buffer = cv2.imencode('.jpg', annotated_frame)
         if not ok:
             log_event(
                 request.user, quiz, "encode_error",
@@ -97,32 +191,36 @@ def quiz_ai_stream(request, quiz_id):
             )
             return JsonResponse({"error": "encode_failed"}, status=500)
 
-        frame_b64 = base64.b64encode(buffer).decode("utf-8")
-        return JsonResponse({
-            "frame": f"data:image/jpeg;base64,{frame_b64}",
-            "meta": meta
-        })
+        frame_b64 = base64.b64encode(buffer).decode('utf-8')
+        return JsonResponse({"frame": f"data:image/jpeg;base64,{frame_b64}"})
 
     except Exception as e:
-        # Unexpected server-side exception
+        traceback_str = traceback.format_exc()
+        print("[STREAM ERROR]", traceback_str)  # <-- print full error
         log_event(
             request.user, quiz, "stream_error",
             message=str(e),
             severity="error",
-            metadata={"where": "quiz_ai_stream", "trace": traceback.format_exc()[:1500]},
-            frame_b64=request.POST.get("frame"),  # best-effort attach original
+            metadata={
+                "where": "quiz_ai_stream",
+                "trace": traceback_str[:1500],
+                "frame_present": bool(request.POST.get("frame"))
+            },
+            frame_b64=request.POST.get("frame"),
         )
         return JsonResponse({"error": "server_exception", "detail": repr(e)}, status=500)
 
+# -------------------- AI status polling --------------------
 def quiz_ai_status(request, quiz_id):
-    """Return current AI status for frontend polling."""
     if not request.user.is_authenticated:
         return JsonResponse({"error": "auth_required"}, status=403)
 
     quiz = get_object_or_404(Quiz, id=quiz_id)
+
+    # --- Get current AI status ---
     status = ds.get_status() or {}
 
-    # Log alerts on polling
+    # --- Log any alerts ---
     for code in status.get("active_alerts", []):
         log_event(
             request.user, quiz, code,
@@ -141,37 +239,10 @@ def quiz_ai_status(request, quiz_id):
 
     return JsonResponse(status)
 
-import os
-import time
-import json
-import base64
-import numpy as np
-import cv2
-from django.conf import settings
-from django.http import JsonResponse, HttpResponseRedirect
-from django.contrib.auth.decorators import login_required
-from django.urls import reverse
-from django.views.decorators.csrf import csrf_exempt
 
-# Toggle face recognition on/off
-FACE_RECOGNITION_ENABLED = False  # Set to True to enable recognition again
+# -------------------- Face capture & verification --------------------
+FACE_RECOGNITION_ENABLED = False
 
-# ----------------- Improved KNN Helper with distance -----------------
-def distance(v1, v2):
-    return np.linalg.norm(v1 - v2)
-
-def knn_with_distance(train, test, k=5):
-    distances = np.linalg.norm(train[:, :-1] - test, axis=1)
-    nearest_indices = np.argsort(distances)[:k]
-    nearest_labels = train[nearest_indices, -1]
-    min_dist = np.min(distances[nearest_indices])
-    
-    unique_labels, counts = np.unique(nearest_labels, return_counts=True)
-    predicted_class = unique_labels[np.argmax(counts)]
-    
-    return int(predicted_class), min_dist
-
-# Cache for face datasets
 _face_dataset_cache = None
 _labels_cache = None
 _names_cache = None
@@ -184,8 +255,7 @@ def _load_face_dataset():
     global _face_dataset_cache, _labels_cache, _names_cache, _trainset_cache, _last_cache_time, _dynamic_threshold
     
     current_time = time.time()
-    if (_face_dataset_cache is not None and 
-        current_time - _last_cache_time < CACHE_TIMEOUT):
+    if (_face_dataset_cache is not None and current_time - _last_cache_time < CACHE_TIMEOUT):
         return _face_dataset_cache, _labels_cache, _names_cache, _trainset_cache, _dynamic_threshold
     
     dataset_path = os.path.join(settings.BASE_DIR, 'Real-time-Face-Recognition-Project', 'face_dataset')
@@ -210,8 +280,7 @@ def _load_face_dataset():
     face_labels = np.concatenate(labels, axis=0).reshape((-1, 1))
     trainset = np.concatenate((face_dataset, face_labels), axis=1)
     
-    _dynamic_threshold = 2000  # Fixed threshold
-    
+    _dynamic_threshold = 2000
     _face_dataset_cache = face_dataset
     _labels_cache = face_labels
     _names_cache = names
@@ -220,174 +289,38 @@ def _load_face_dataset():
     
     return face_dataset, face_labels, names, trainset, _dynamic_threshold
 
+
 @csrf_exempt
-@login_required
-def verify_face(request):
+def capture_face(request):
     if request.method != 'POST':
-        return JsonResponse({'valid': False, 'error': 'Invalid request method'})
+        return JsonResponse({"status": "error", "message": "Invalid request"})
 
-    current_username = request.user.username
+    if not request.user.is_authenticated:
+        return JsonResponse({"status": "error", "message": "User not logged in"})
 
-    # --- TEMPORARY BYPASS ---
-    if not FACE_RECOGNITION_ENABLED:
-        return JsonResponse({
-            'valid': True,
-            'status': 'Face recognition temporarily disabled',
-            'username': current_username,
-            'confidence': 1.0,
-            'distance': 0.0,
-            'threshold': 0.0
-        })
-
-    # Step 1: Decode image from frontend
     try:
-        data = json.loads(request.body)
-        image_data = data.get('image', '')
-        if not image_data or ',' not in image_data:
-            return JsonResponse({'valid': False, 'error': 'Invalid image format'})
-        
-        image_data = image_data.split(',')[1]
-        img_bytes = base64.b64decode(image_data)
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        if frame is None:
-            return JsonResponse({'valid': False, 'error': 'Failed to decode image'})
-            
-    except json.JSONDecodeError:
-        return JsonResponse({'valid': False, 'error': 'Invalid JSON data'})
-    except Exception as e:
-        return JsonResponse({'valid': False, 'error': f'Failed to process image: {str(e)}'})
+        body = json.loads(request.body.decode('utf-8'))
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid JSON"})
 
-    # Step 2: Load face datasets
+    image_data = body.get("image")
+    index = body.get("index", 0)
+
+    if not image_data:
+        return JsonResponse({"status": "error", "message": "No image data"})
+
+    image_data = re.sub(r'^data:image/.+;base64,', '', image_data)
     try:
-        face_dataset, face_labels, names, trainset, dynamic_threshold = _load_face_dataset()
-    except Exception as e:
-        return JsonResponse({'valid': False, 'error': f'Failed to load face dataset: {str(e)}'})
+        image_bytes = base64.b64decode(image_data)
+    except Exception:
+        return JsonResponse({"status": "error", "message": "Invalid base64 data"})
 
-    # Check if current user's face data exists
-    user_face_exists = any(current_username == name for name in names.values())
-    if not user_face_exists:
-        return JsonResponse({
-            'valid': False, 
-            'error': f'Your face is not registered. Please register your face first.'
-        })
+    username = request.user.username
+    user_folder = os.path.join(settings.MEDIA_ROOT, "faces", username)
+    os.makedirs(user_folder, exist_ok=True)
+    filename = os.path.join(user_folder, f"face_{index}.png")
+    with open(filename, "wb") as f:
+        f.write(image_bytes)
 
-    # Step 3: Detect face in current frame
-    try:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt.xml')
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-    except Exception as e:
-        return JsonResponse({'valid': False, 'error': f'Face detection failed: {str(e)}'})
+    return JsonResponse({"status": "success", "file": filename})
 
-    if len(faces) == 0:
-        print("DEBUG: NO FACE DETECTED - triggering mismatch")
-        return _handle_face_mismatch(request, "No face detected", 9999)
-
-    x, y, w, h = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
-    face_section = frame[y:y+h, x:x+w]
-    face_section = cv2.resize(face_section, (100, 100)).flatten()
-
-    # Step 4: KNN prediction with distance
-    try:
-        predicted_class, min_dist = knn_with_distance(trainset, face_section)
-    except Exception as e:
-        return JsonResponse({'valid': False, 'error': f'Face recognition failed: {str(e)}'})
-
-    predicted_name = names.get(int(predicted_class), "Unknown")
-    
-    print(f"DEBUG: Distance: {min_dist:.2f}, Threshold: {dynamic_threshold:.2f}")
-    print(f"DEBUG: Predicted: {predicted_name}, Expected: {current_username}")
-
-    if min_dist > dynamic_threshold:
-        predicted_name = "Unknown"
-        print(f"DEBUG: UNKNOWN FACE (distance {min_dist:.2f} > threshold {dynamic_threshold:.2f})")
-        return _handle_face_mismatch(request, "Unknown face", min_dist)
-    else:
-        print(f"DEBUG: RECOGNIZED as {predicted_name} (distance {min_dist:.2f})")
-
-    if predicted_name == current_username:
-        session = request.session
-        session_key_prefix = f'face_verify_{request.user.id}_'
-        session[f'{session_key_prefix}mismatch_count'] = 0
-        session[f'{session_key_prefix}last_warning_time'] = None
-        session.modified = True
-        
-        confidence = max(0, min(1, 1 - (min_dist / dynamic_threshold)))
-        
-        return JsonResponse({
-            'valid': True, 
-            'status': 'Face matched successfully',
-            'username': current_username,
-            'confidence': float(confidence),
-            'distance': float(min_dist),
-            'threshold': float(dynamic_threshold)
-        })
-    else:
-        print(f"DEBUG: WRONG USER - expected {current_username}, got {predicted_name}")
-        return _handle_face_mismatch(request, f"Wrong user: {predicted_name}", min_dist)
-
-
-def _handle_face_mismatch(request, reason, distance_value):
-    session = request.session
-    session_key_prefix = f'face_verify_{request.user.id}_'
-    current_time = time.time()
-    
-    if f'{session_key_prefix}mismatch_count' not in session:
-        session[f'{session_key_prefix}mismatch_count'] = 0
-        session[f'{session_key_prefix}last_warning_time'] = None
-    
-    mismatch_count = session[f'{session_key_prefix}mismatch_count']
-    last_warning_time = session[f'{session_key_prefix}last_warning_time']
-    
-    session[f'{session_key_prefix}mismatch_count'] = mismatch_count + 1
-    session[f'{session_key_prefix}last_warning_time'] = current_time
-    session.modified = True
-    
-    new_mismatch_count = mismatch_count + 1
-    print(f"DEBUG: Mismatch count: {new_mismatch_count}/3, Reason: {reason}")
-    
-    if new_mismatch_count == 1:
-        return JsonResponse({
-            'valid': False, 
-            'warning': '⚠️ First warning: Face mismatch detected',
-            'reason': reason,
-            'mismatch_count': new_mismatch_count,
-            'distance': float(distance_value),
-            'remaining_chances': 2
-        })
-    
-    elif new_mismatch_count == 2:
-        return JsonResponse({
-            'valid': False, 
-            'warning': '❗️ Strong warning: Face mismatch detected again',
-            'reason': reason,
-            'mismatch_count': new_mismatch_count,
-            'distance': float(distance_value),
-            'remaining_chances': 1
-        })
-    
-    elif new_mismatch_count >= 3:
-        print("DEBUG: THIRD MISMATCH - TERMINATING EXAM")
-        session[f'{session_key_prefix}mismatch_count'] = 0
-        session[f'{session_key_prefix}last_warning_time'] = None
-        session.modified = True
-        
-        return JsonResponse({
-            'valid': False, 
-            'terminated': True,
-            'error': '⛔️ Exam terminated due to repeated face mismatches',
-            'reason': reason,
-            'mismatch_count': new_mismatch_count,
-            'redirect_url': reverse('student_dashboard')
-        })
-    
-    else:
-        return JsonResponse({
-            'valid': False, 
-            'error': 'Face mismatch detected',
-            'reason': reason,
-            'mismatch_count': new_mismatch_count,
-            'distance': float(distance_value)
-        })

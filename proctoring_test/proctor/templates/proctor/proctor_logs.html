@@ -37,35 +37,32 @@
 </div>
 
 <script>
-  // simple poller: asks for rows newer than the first row's timestamp
   const body = document.getElementById('events-body');
   const liveToggle = document.getElementById('liveToggle');
 
-  function latestTS(){
+  function latestTS() {
     const first = body.querySelector('tr[data-ts]');
     return first ? first.getAttribute('data-ts') : '';
   }
 
-  async function poll(){
+  async function poll() {
     if (!liveToggle.checked) return;
     const url = "{% url 'proctor_logs_partial' quiz.id %}" + "?latest_ts=" + encodeURIComponent(latestTS());
     try {
-      const resp = await fetch(url, {headers:{'HX-Request':'true'}});
+      const resp = await fetch(url, {headers: {'HX-Request':'true'}});
       if (resp.ok) {
         const html = await resp.text();
         if (html.trim()) {
-          // prepend new rows
           const temp = document.createElement('tbody');
           temp.innerHTML = html;
           while (temp.firstChild) body.prepend(temp.firstChild);
-          // cap rows
           const rows = body.querySelectorAll('tr[data-ts]');
-          for (let i=1000; i<rows.length; i++) rows[i].remove();
+          for (let i = 1000; i < rows.length; i++) rows[i].remove();
         }
       }
-    } catch(e) { /* ignore network blips */ }
+    } catch(e) {}
   }
 
-  setInterval(poll, 3000); // every 3s
+  setInterval(poll, 3000);
 </script>
 {% endblock %}

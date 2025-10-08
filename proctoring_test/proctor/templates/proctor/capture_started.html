@@ -1,28 +1,98 @@
-{% extends 'base_student.html' %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Face Capture</title>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        video, canvas {
+            border: 1px solid black;
+        }
+        #status {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h2>Face Capture (Live)</h2>
+    <video id="video" width="640" height="480" autoplay muted></video>
+    <canvas id="overlay" width="640" height="480"></canvas>
+    <p id="status">Loading models...</p>
 
-{% block title %}Capture Started{% endblock %}
+    <!-- Hidden button -->
+    <button id="done-btn" onclick="window.location.href='/student_dashboard/'">
+        Go to Student Dashboard
+    </button>
 
-{% block content %}
-<div class="container mt-5">
-    <h2>Face Capture Started</h2>
-    <p>Please follow the instructions in the terminal/OpenCV window to capture your face.</p>
-    <a href="{% url 'student_dashboard' %}" class="btn btn-success mt-3" id="doneBtn">Done</a>
-</div>
+    <script>
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const context = overlay.getContext('2d');
+        const status = document.getElementById('status');
+        const doneBtn = document.getElementById('done-btn');
 
-<script>
-const doneBtn = document.getElementById('doneBtn');
-doneBtn.disabled = true;  // Disable initially
 
-function checkFile() {
-    fetch("{% url 'check_face_file' %}")
-        .then(response => response.json())
-        .then(data => {
-            if(data.exists) doneBtn.disabled = false;
-        })
-        .catch(err => console.error(err));
-}
+        let captureCount = 0;
+        const maxCaptures = 50;
 
-// Check every 2 seconds
-setInterval(checkFile, 2000);
-</script>
-{% endblock %}
+        async function startVideo() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error("Camera error:", err);
+                status.innerText = "Cannot access camera!";
+            }
+        }
+
+        async function init() {
+            status.innerText = "Loading face detection models...";
+            await faceapi.nets.ssdMobilenetv1.loadFromUri('/static/models');
+            await faceapi.nets.faceLandmark68Net.loadFromUri('/static/models');
+            status.innerText = "Models loaded. Starting camera...";
+            startVideo();
+        }
+
+        video.addEventListener('play', () => {
+            const interval = setInterval(async () => {
+                if (captureCount >= maxCaptures) {
+                    status.innerText = `Finished capturing ${maxCaptures} faces.`;
+                    clearInterval(interval);
+                    video.srcObject.getTracks().forEach(track => track.stop());
+                   // ✅ Show the button
+                    doneBtn.style.display = "inline-block";
+                    return;
+                }
+
+                const detections = await faceapi.detectAllFaces(video, new faceapi.SsdMobilenetv1Options());
+                context.clearRect(0, 0, overlay.width, overlay.height);
+
+                if (detections.length > 0) {
+                    status.innerText = `Face detected! Capturing (${captureCount + 1}/${maxCaptures})`;
+                    faceapi.draw.drawDetections(overlay, detections);
+
+                    // Capture current frame
+                    context.drawImage(video, 0, 0, video.width, video.height);
+                    const imageData = overlay.toDataURL('image/png');
+
+                    // Send to backend
+                    fetch('/webcam/capture/', {
+                        method: 'POST',
+                        credentials: 'same-origin', 
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: imageData, index: captureCount + 1 })
+                    })
+                    .then(res => res.json())
+                    .then(data => console.log("Saved:", data))
+                    .catch(err => console.error("Error saving:", err));
+
+                    captureCount++;
+                } else {
+                    status.innerText = `No face detected. Retrying... (${captureCount}/${maxCaptures})`;
+                }
+            }, 500);
+        });
+
+        init();
+    </script>
+</body>
+</html>

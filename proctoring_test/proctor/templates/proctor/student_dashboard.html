@@ -50,7 +50,7 @@
     <!-- Results -->
     <div class="bg-white rounded-lg shadow-lg p-6 animate-fadeIn">
         <h2 class="text-xl font-semibold text-gray-800 mb-4">Your Results</h2>
-        {% if results %}
+        {% if page_obj.object_list %}
         <div class="overflow-x-auto">
             <table class="min-w-full border border-gray-200 rounded-lg overflow-hidden">
                 <thead class="bg-gray-100">
@@ -61,20 +61,48 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200">
-                    {% for result in results %}
+                    {% for result in page_obj.object_list %}
                     <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-4 py-2 text-gray-800">{{ result.quiz_title }}</td>
-                        <td class="px-4 py-2 text-gray-800">{{ result.correct_answers }} / {{ result.total_questions }}</td>
+                        <td class="px-4 py-2">
+                            <a href="{% url 'teacher_quiz_results' result.quiz_id %}" 
+                            class="text-blue-600 font-medium hover:underline">
+                                {{ result.quiz_title }}
+                            </a>
+                        </td>
+                        <td class="px-4 py-2 text-gray-800">
+                            {{ result.correct_answers }} / {{ result.total_questions }}
+                        </td>
                         <td class="px-4 py-2 text-gray-800">{{ result.percentage }}%</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+
+        <!-- Pagination controls -->
+        <div class="flex justify-center mt-4 space-x-2">
+            {% if page_obj.has_previous %}
+            <a href="?page={{ page_obj.previous_page_number }}" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">&laquo; Prev</a>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                    <span class="px-3 py-1 bg-blue-600 text-white rounded">{{ num }}</span>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <a href="?page={{ num }}" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">{{ num }}</a>
+                {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}" class="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300">Next &raquo;</a>
+            {% endif %}
+        </div>
+
         {% else %}
         <div class="text-center py-8 text-gray-500">You have not completed any quizzes yet.</div>
         {% endif %}
     </div>
+
 
 </div>
 {% endblock %}

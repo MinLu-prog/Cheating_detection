@@ -29,24 +29,27 @@
                         <p class="text-sm"><strong>Q:</strong> {{ ans.question }}</p>
 
                         {% if ans.type == "match" %}
-                            <!-- Matching Question Format -->
                             <ul class="pl-4 space-y-1">
                                 {% for pair in ans.selected %}
                                 <li class="text-sm">
                                     <strong>{{ pair.left }}</strong> → <strong>{{ pair.right }}</strong>
                                     {% if pair.correct %}
-                                    <span class="inline-block ml-2 px-2 py-1 text-xs font-semibold text-green-700 bg-green-100 rounded">
-                                        ✅ Correct
-                                    </span>
+                                    <span class="ml-2 text-green-700 font-semibold">✅</span>
                                     {% else %}
-                                    <span class="inline-block ml-2 px-2 py-1 text-xs font-semibold text-red-700 bg-red-100 rounded">
-                                        ❌ Wrong
-                                    </span>
+                                    <span class="ml-2 text-red-700 font-semibold">❌</span>
                                     {% endif %}
                                 </li>
                                 {% endfor %}
                             </ul>
+
+                            <p class="text-sm mt-2"><strong>Correct Pairs:</strong></p>
+                            <ul class="pl-6">
+                                {% for pair in ans.correct_pairs %}
+                                <li class="text-sm">{{ pair.left }} → {{ pair.right }}</li>
+                                {% endfor %}
+                            </ul>
                         {% else %}
+
                             <!-- Other Question Types -->
                             <p class="text-sm"><strong>Student Answer:</strong> {{ ans.selected }}</p>
                             <p class="text-sm"><strong>Correct Answer:</strong> {{ ans.correct_answer }}</p>

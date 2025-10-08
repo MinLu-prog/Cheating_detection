@@ -63,19 +63,17 @@ def login_view(request):
             return redirect('profile')
 
         elif is_student(user):
-            dataset_path = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)),
-                '../Real-time-Face-Recognition-Project/face_dataset'
-            )
-            dataset_file = os.path.join(dataset_path, f'{user.username}.npy')
+            # Check if face dataset exists
+            base_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "faces")
+            user_face_dir = os.path.join(base_path, user.username)
 
-            if not os.path.exists(dataset_file):
-                logger.info(f"No dataset found for {user.username}, redirecting to face capture.")
-                request.session['pending_face_capture'] = True  # Optional flag
+            if not os.path.exists(user_face_dir) or not os.listdir(user_face_dir):
+                # No folder or empty folder → need to capture
+                logger.info(f"No face data found for {user.username}, redirecting to capture.")
+                request.session['pending_face_capture'] = True
                 return redirect('capture_face')
             else:
                 return redirect('student_dashboard')
-
 
         elif user.is_superuser:
             return redirect('/admin/')
@@ -83,6 +81,8 @@ def login_view(request):
         return redirect('home')
 
     return render(request, 'proctor/login.html')
+
+from django.core.paginator import Paginator
 # views.py
 @login_required
 def profile(request):
@@ -144,6 +144,8 @@ def student_dashboard(request):
         return redirect('home')
 
     now = timezone.now()
+
+    # ✅ Quizzes currently open that student has NOT taken yet
     available_quizzes = Quiz.objects.filter(
         open_time__lte=now,
         close_time__gte=now,
@@ -152,8 +154,7 @@ def student_dashboard(request):
         responses__student=request.user
     )
 
-    # Aggregation of quiz results with percentage
-    quiz_results = []
+    # ✅ Only quizzes the student has taken (distinct)
     submitted_quizzes = (
         StudentResponse.objects
         .filter(student=request.user)
@@ -161,6 +162,7 @@ def student_dashboard(request):
         .distinct()
     )
 
+    quiz_results = []
     for item in submitted_quizzes:
         quiz_id = item['quiz']
         quiz = Quiz.objects.get(id=quiz_id)
@@ -170,18 +172,32 @@ def student_dashboard(request):
         percentage = round((correct_answers / total_questions) * 100, 2) if total_questions > 0 else 0
 
         quiz_results.append({
+            'quiz_id': quiz.id,
             'quiz_title': quiz.title,
             'correct_answers': correct_answers,
             'total_questions': total_questions,
-            'percentage': percentage
+            'percentage': percentage,
         })
 
-    return render(request, 'proctor/student_dashboard.html', {
+    context = {
         'available_quizzes': available_quizzes,
         'results': quiz_results,
         'now': now,
+    }
+
+    # --- Pagination ---
+    paginator = Paginator(quiz_results, 5)  # show 5 results per page
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    return render(request, 'proctor/student_dashboard.html', {
+        'available_quizzes': available_quizzes,
+        'page_obj': page_obj,
+        'now': now,
     })
 
+
+    return render(request, 'proctor/student_dashboard.html', context)
 @login_required
 def teacher_dashboard(request):
     if not is_teacher(request.user):
@@ -711,57 +727,35 @@ def take_quiz(request, quiz_id):
 
                     # ---- MATCHING ----
                     elif qtype in ("match", "matching"):
-                        raw_answer = single_value or (posted_values[0] if posted_values else "")
-                        parsed_json = {}
-                        try:
-                            parsed_json = json.loads(raw_answer) if raw_answer else {}
-                        except Exception:
-                            logger.warning(f"[MATCH] Invalid matching JSON for q {question.id}: {raw_answer}")
-
-                        # Normalize to a single structure:
-                        # {
-                        #   "pairs": [{"l": int, "r": int, "lText": str, "rText": str}, ...],
-                        #   "mapByLeftLabel": {"leftText": "rightText", ...},
-                        #   "raw": <original_payload>
-                        # }
-                        pairs = []
+                        # Look for individual matching pair fields
                         map_by_left_label = {}
+                        
+                        # Extract all fields that start with the question ID pattern
+                        matching_prefix = f"question_{question.id}_"
+                        for key, value in request.POST.items():
+                            if key.startswith(matching_prefix):
+                                left_text = key[len(matching_prefix):].strip()
+                                right_text = value.strip()
+                                if left_text and right_text:
+                                    map_by_left_label[left_text] = right_text
+                        
+                        # Also check for JSON payload
+                        raw_answer = single_value or (posted_values[0] if posted_values else "")
+                        if raw_answer and raw_answer.strip():
+                            try:
+                                parsed_json = json.loads(raw_answer)
+                                if isinstance(parsed_json, dict):
+                                    # Merge with JSON data
+                                    for k, v in parsed_json.items():
+                                        if str(k).strip() and str(v).strip():
+                                            map_by_left_label[str(k).strip()] = str(v).strip()
+                            except Exception:
+                                logger.warning(f"[MATCH] Invalid matching JSON for q {question.id}: {raw_answer}")
 
-                        if isinstance(parsed_json, dict) and "pairs" in parsed_json:
-                            # new shape from the template
-                            for p in parsed_json.get("pairs", []):
-                                try:
-                                    l = int(p.get("l"))
-                                    r = int(p.get("r"))
-                                except (TypeError, ValueError):
-                                    continue
-                                lText = str(p.get("lText", "")).strip()
-                                rText = str(p.get("rText", "")).strip()
-                                pairs.append({"l": l, "r": r, "lText": lText, "rText": rText})
-                                if lText and rText:
-                                    map_by_left_label[lText] = rText
-
-                        elif isinstance(parsed_json, dict) and parsed_json:
-                            # legacy: {"leftText": "rightText", ...}
-                            for k, v in parsed_json.items():
-                                lk = str(k).strip()
-                                rv = str(v).strip()
-                                if lk:
-                                    map_by_left_label[lk] = rv
-
-                        elif isinstance(parsed_json, list):
-                            # fallback: list of pairs like [["A","1"],["B","2"]]
-                            for item in parsed_json:
-                                if isinstance(item, (list, tuple)) and len(item) == 2:
-                                    lk = str(item[0]).strip()
-                                    rv = str(item[1]).strip()
-                                    if lk:
-                                        map_by_left_label[lk] = rv
-
+                        # Create normalized payload
                         normalized_payload = {
-                            "pairs": pairs,                         # index-based if available
-                            "mapByLeftLabel": map_by_left_label,   # always useful for review
-                            "raw": parsed_json,                    # keep original for audit
+                            "mapByLeftLabel": map_by_left_label,
+                            "pairs": [{"left": k, "right": v} for k, v in map_by_left_label.items()],
                         }
 
                         StudentResponse.objects.create(
@@ -807,10 +801,25 @@ def take_quiz(request, quiz_id):
 
         return redirect('student_dashboard')
 
-    # GET: render quiz page
+    # GET: render quiz page with randomized matching questions
+    import random
+    
+    questions_list = []
+    for question in quiz.questions.all().order_by("order"):
+        # Create a copy of the question with shuffled pairs for matching questions
+        if question.question_type in ("match", "matching", "matching_pairs"):
+            matching_pairs = list(question.matching_pairs.all())
+            random.shuffle(matching_pairs)  # Randomize the order
+            # Add shuffled_pairs as an attribute to the question object
+            question.shuffled_pairs = matching_pairs
+        else:
+            question.shuffled_pairs = None
+            
+        questions_list.append(question)
+
     return render(request, "proctor/take_quiz.html", {
         "quiz": quiz,
-        "questions": quiz.questions.all().order_by("order"),
+        "questions": questions_list,
         "time_limit": quiz.time_limit * 60,  # seconds
     })
 
@@ -854,70 +863,6 @@ from django.contrib.auth.decorators import login_required
 
 from .knn_module import knn  # Ensure you import your KNN function correctly
 
-
-# @csrf_exempt  # Keep only if using JavaScript fetch without CSRF token
-# @login_required
-# def verify_face(request):
-#     if request.method != 'POST':
-#         return JsonResponse({'valid': False, 'error': 'Invalid request method'})
-
-#     # Step 1: Decode base64 image
-#     try:
-#         data = json.loads(request.body)
-#         image_data = data.get('image', '').split(',')[1]
-#         img_bytes = base64.b64decode(image_data)
-#         nparr = np.frombuffer(img_bytes, np.uint8)
-#         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-#     except Exception as e:
-#         return JsonResponse({'valid': False, 'error': 'Failed to decode image data'})
-
-#     # Step 2: Load dataset
-#     dataset_path = os.path.join(settings.BASE_DIR, 'Real-time-Face-Recognition-Project', 'face_dataset')
-
-
-#     face_data = []
-#     labels = []
-#     names = {}
-#     class_id = 0
-
-#     for fx in os.listdir(dataset_path):
-#         if fx.endswith('.npy'):
-#             name = fx[:-4]
-#             names[class_id] = name
-#             data_item = np.load(os.path.join(dataset_path, fx))
-#             face_data.append(data_item)
-#             labels.append(class_id * np.ones((data_item.shape[0],)))
-#             class_id += 1
-
-#     # Step 3: Validate that current user is in the dataset
-#     if request.user.username not in names.values():
-#         return JsonResponse({'valid': False, 'error': 'Your face is not registered in the dataset'})
-
-#     # Step 4: Train KNN
-#     face_dataset = np.concatenate(face_data, axis=0)
-#     face_labels = np.concatenate(labels, axis=0).reshape((-1, 1))
-#     trainset = np.concatenate((face_dataset, face_labels), axis=1)
-
-#     # Step 5: Detect face in uploaded frame
-#     face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt.xml')
-#     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-#     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-
-#     if len(faces) == 0:
-#         return JsonResponse({'valid': False, 'error': 'No face detected'})
-
-#     for (x, y, w, h) in faces:
-#         face_section = frame[y:y+h, x:x+w]
-#         face_section = cv2.resize(face_section, (100, 100)).flatten()
-#         out = knn(trainset, face_section)
-#         predicted_name = names[int(out)]
-
-#         if predicted_name == request.user.username:
-#             return JsonResponse({'valid': True})
-
-#     return JsonResponse({'valid': False, 'error': 'Face mismatch'})
-# ----------------- Face Verification ----------------- #
-
 import base64
 import numpy as np
 import cv2
@@ -941,8 +886,7 @@ from django.http import JsonResponse, HttpResponseRedirect
 from django.contrib.auth.decorators import login_required
 from django.urls import reverse
 
-# Toggle face recognition on/off
-FACE_RECOGNITION_ENABLED = False  # Set to True to enable recognition again
+# Toggle face recognition on/off  # Set to True to enable recognition again
 
 # ----------------- Improved KNN Helper with distance -----------------
 def distance(v1, v2):
@@ -1008,176 +952,6 @@ def _load_face_dataset():
     
     return face_dataset, face_labels, names, trainset, _dynamic_threshold
 
-@login_required
-def verify_face(request):
-    if request.method != 'POST':
-        return JsonResponse({'valid': False, 'error': 'Invalid request method'})
-
-    current_username = request.user.username
-
-    # --- TEMPORARY BYPASS ---
-    if not FACE_RECOGNITION_ENABLED:
-        return JsonResponse({
-            'valid': True,
-            'status': 'Face recognition temporarily disabled',
-            'username': current_username,
-            'confidence': 1.0,
-            'distance': 0.0,
-            'threshold': 0.0
-        })
-
-    # Step 1: Decode image from frontend
-    try:
-        data = json.loads(request.body)
-        image_data = data.get('image', '')
-        if not image_data or ',' not in image_data:
-            return JsonResponse({'valid': False, 'error': 'Invalid image format'})
-        
-        image_data = image_data.split(',')[1]
-        img_bytes = base64.b64decode(image_data)
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        if frame is None:
-            return JsonResponse({'valid': False, 'error': 'Failed to decode image'})
-            
-    except json.JSONDecodeError:
-        return JsonResponse({'valid': False, 'error': 'Invalid JSON data'})
-    except Exception as e:
-        return JsonResponse({'valid': False, 'error': f'Failed to process image: {str(e)}'})
-
-    # Step 2: Load face datasets
-    try:
-        face_dataset, face_labels, names, trainset, dynamic_threshold = _load_face_dataset()
-    except Exception as e:
-        return JsonResponse({'valid': False, 'error': f'Failed to load face dataset: {str(e)}'})
-
-    # Check if current user's face data exists
-    user_face_exists = any(current_username == name for name in names.values())
-    if not user_face_exists:
-        return JsonResponse({
-            'valid': False, 
-            'error': f'Your face is not registered. Please register your face first.'
-        })
-
-    # Step 3: Detect face in current frame
-    try:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt.xml')
-        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
-    except Exception as e:
-        return JsonResponse({'valid': False, 'error': f'Face detection failed: {str(e)}'})
-
-    if len(faces) == 0:
-        print("DEBUG: NO FACE DETECTED - triggering mismatch")
-        return _handle_face_mismatch(request, "No face detected", 9999)
-
-    x, y, w, h = sorted(faces, key=lambda f: f[2]*f[3], reverse=True)[0]
-    face_section = frame[y:y+h, x:x+w]
-    face_section = cv2.resize(face_section, (100, 100)).flatten()
-
-    # Step 4: KNN prediction with distance
-    try:
-        predicted_class, min_dist = knn_with_distance(trainset, face_section)
-    except Exception as e:
-        return JsonResponse({'valid': False, 'error': f'Face recognition failed: {str(e)}'})
-
-    predicted_name = names.get(int(predicted_class), "Unknown")
-    
-    print(f"DEBUG: Distance: {min_dist:.2f}, Threshold: {dynamic_threshold:.2f}")
-    print(f"DEBUG: Predicted: {predicted_name}, Expected: {current_username}")
-
-    if min_dist > dynamic_threshold:
-        predicted_name = "Unknown"
-        print(f"DEBUG: UNKNOWN FACE (distance {min_dist:.2f} > threshold {dynamic_threshold:.2f})")
-        return _handle_face_mismatch(request, "Unknown face", min_dist)
-    else:
-        print(f"DEBUG: RECOGNIZED as {predicted_name} (distance {min_dist:.2f})")
-
-    if predicted_name == current_username:
-        session = request.session
-        session_key_prefix = f'face_verify_{request.user.id}_'
-        session[f'{session_key_prefix}mismatch_count'] = 0
-        session[f'{session_key_prefix}last_warning_time'] = None
-        session.modified = True
-        
-        confidence = max(0, min(1, 1 - (min_dist / dynamic_threshold)))
-        
-        return JsonResponse({
-            'valid': True, 
-            'status': 'Face matched successfully',
-            'username': current_username,
-            'confidence': float(confidence),
-            'distance': float(min_dist),
-            'threshold': float(dynamic_threshold)
-        })
-    else:
-        print(f"DEBUG: WRONG USER - expected {current_username}, got {predicted_name}")
-        return _handle_face_mismatch(request, f"Wrong user: {predicted_name}", min_dist)
-
-
-def _handle_face_mismatch(request, reason, distance_value):
-    session = request.session
-    session_key_prefix = f'face_verify_{request.user.id}_'
-    current_time = time.time()
-    
-    if f'{session_key_prefix}mismatch_count' not in session:
-        session[f'{session_key_prefix}mismatch_count'] = 0
-        session[f'{session_key_prefix}last_warning_time'] = None
-    
-    mismatch_count = session[f'{session_key_prefix}mismatch_count']
-    last_warning_time = session[f'{session_key_prefix}last_warning_time']
-    
-    session[f'{session_key_prefix}mismatch_count'] = mismatch_count + 1
-    session[f'{session_key_prefix}last_warning_time'] = current_time
-    session.modified = True
-    
-    new_mismatch_count = mismatch_count + 1
-    print(f"DEBUG: Mismatch count: {new_mismatch_count}/3, Reason: {reason}")
-    
-    if new_mismatch_count == 1:
-        return JsonResponse({
-            'valid': False, 
-            'warning': '⚠️ First warning: Face mismatch detected',
-            'reason': reason,
-            'mismatch_count': new_mismatch_count,
-            'distance': float(distance_value),
-            'remaining_chances': 2
-        })
-    
-    elif new_mismatch_count == 2:
-        return JsonResponse({
-            'valid': False, 
-            'warning': '❗️ Strong warning: Face mismatch detected again',
-            'reason': reason,
-            'mismatch_count': new_mismatch_count,
-            'distance': float(distance_value),
-            'remaining_chances': 1
-        })
-    
-    elif new_mismatch_count >= 3:
-        print("DEBUG: THIRD MISMATCH - TERMINATING EXAM")
-        session[f'{session_key_prefix}mismatch_count'] = 0
-        session[f'{session_key_prefix}last_warning_time'] = None
-        session.modified = True
-        
-        return JsonResponse({
-            'valid': False, 
-            'terminated': True,
-            'error': '⛔️ Exam terminated due to repeated face mismatches',
-            'reason': reason,
-            'mismatch_count': new_mismatch_count,
-            'redirect_url': reverse('student_dashboard')
-        })
-    
-    else:
-        return JsonResponse({
-            'valid': False, 
-            'error': 'Face mismatch detected',
-            'reason': reason,
-            'mismatch_count': new_mismatch_count,
-            'distance': float(distance_value)
-        })
 import os
 import subprocess
 import sys
@@ -1203,28 +977,15 @@ def capture_face_view(request):
         return redirect('home')
 
     # Dataset folder path (must match face_data.py)
-    dataset_path = r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project\face_dataset"
-    os.makedirs(dataset_path, exist_ok=True)
 
     # Path to this user's dataset file
-    dataset_file = os.path.join(dataset_path, f'{user.username}.npy')
-
     # Skip if already exists
-    if os.path.exists(dataset_file):
-        messages.info(request, "Your face data already exists.")
-        return redirect('student_dashboard')
 
     if request.method == 'POST':
         # Absolute path to face_data.py
-        script_path = r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project\face_data.py"
 
         try:
             # Launch script in a new console window (Windows)
-            subprocess.Popen(
-                [sys.executable, script_path, user.username],
-                cwd=r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project",
-                creationflags=subprocess.CREATE_NEW_CONSOLE
-            )
             messages.success(request, "Face capture started! Please follow the instructions in the new window.")
             # Redirect immediately to capture_started page
             return redirect('capture_started')
@@ -1241,12 +1002,7 @@ def capture_started_view(request):
 
 
 # ---- Check if face data file exists (for Done button) ----
-@login_required
-def check_face_file(request):
-    user = request.user
-    dataset_file = r"D:\Cheating_Detection\Detection\Cheating_detection\proctoring_test\proctoring_test\Real-time-Face-Recognition-Project\face_dataset" + f"\\{user.username}.npy"
-    exists = os.path.exists(dataset_file)
-    return JsonResponse({'exists': exists})
+
 
 # General views
 def homepage(request):
@@ -1256,84 +1012,171 @@ def about(request):
     return render(request, 'proctor/about.html')
 from django.shortcuts import render, get_object_or_404
 from .models import Quiz, StudentResponse
+from collections import defaultdict
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import get_object_or_404, render
+from django.db.models import Prefetch
 
+# helper: normalize type names to a canonical token
+def _norm_type(s: str) -> str:
+    if not s:
+        return ""
+    t = s.strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+    # map common variants
+    if t in {"multiple", "mcq", "multiplechoice"}:
+        return "mcq"
+    if t in {"truefalse", "tf", "truef", "truefalsequestion"}:
+        return "tf"
+    if t in {"fill", "blank", "fillintheblank", "fillintheblanks", "fillintheblankquestion", "fillintheblankqs"}:
+        return "fill"
+    if t in {"match", "matching"}:
+        return "match"
+    return t
+
+from collections import defaultdict
+from django.shortcuts import get_object_or_404, render
+from django.db.models import Prefetch
+
+@login_required
 def teacher_quiz_results(request, quiz_id):
-    # Ensure only the teacher who created the quiz can access
-    quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
+    """
+    Shows per-student results for a quiz.
+    Aggregates responses per (student, question) to handle multi-select MCQ
+    and matching questions with partial scoring.
+    """
+    quiz = get_object_or_404(Quiz, id=quiz_id)
 
-    # Fetch all responses for this quiz
-    responses = StudentResponse.objects.filter(quiz=quiz).select_related(
-        "student", "question", "selected_choice"
+    # Prefetch related objects to reduce queries
+    questions_qs = quiz.questions.all().prefetch_related(
+        Prefetch("choices", queryset=Choice.objects.all()),
+        Prefetch("blank_answers", queryset=BlankAnswer.objects.all()),
+        Prefetch("matching_pairs", queryset=MatchingPair.objects.all()),
     )
 
-    # Organize results per student
+    # Fetch all student responses for this quiz
+    responses = (
+        StudentResponse.objects
+        .filter(quiz=quiz)
+        .select_related("student", "question", "selected_choice")
+        .order_by("student_id", "question_id", "id")
+    )
+
+    # Organize responses per student and per question
+    by_student = defaultdict(lambda: defaultdict(list))
+    for r in responses:
+        by_student[r.student][r.question].append(r)
+
     student_results = {}
-    for response in responses:
-        student = response.student
-        if student not in student_results:
-            student_results[student] = {
-                "score": 0,
-                "total": quiz.questions.count(),
-                "answers": []
-            }
+    total_questions = questions_qs.count()
 
-        # Matching question
-        if response.question.question_type == "match":
-            pairs = []
-            correct_pairs = {
-                pair.left_text: pair.right_text for pair in response.question.matching_pairs.all()
-            }
+    for student, qmap in by_student.items():
+        student_results[student] = {
+            "score": 0.0,
+            "total": total_questions,
+            "answers": []
+        }
 
-            if response.matched_pairs:
-                for left, right in response.matched_pairs.items():
-                    correct = correct_pairs.get(left) == right
-                    pairs.append({
-                        "left": left,
-                        "right": right,
-                        "correct": correct
-                    })
-                    if correct:
-                        student_results[student]["score"] += 1 / max(len(correct_pairs), 1)
+        for question in questions_qs:
+            qtype = _norm_type(question.question_type)
+            rs = qmap.get(question, [])
 
+            selected_display = "No answer"
+            correct_display = ""
+            correct_bool = False
+            partial_credit = 0.0
+            correct_pairs_list = []
+
+            # --- MCQ or True/False ---
+            if qtype in {"mcq", "tf"}:
+                correct_choices = list(question.choices.filter(is_correct=True))
+                correct_display = ", ".join(c.text for c in correct_choices)
+                correct_ids = {c.id for c in correct_choices}
+
+                selected_ids = {r.selected_choice_id for r in rs if r.selected_choice_id}
+                if selected_ids:
+                    sel_texts = [r.selected_choice.text for r in rs if r.selected_choice]
+                    selected_display = ", ".join(sel_texts) if sel_texts else "No answer"
+                    correct_bool = (selected_ids == correct_ids)
+
+            # --- Fill-in ---
+            elif qtype == "fill":
+                correct_texts = [b.correct_text for b in question.blank_answers.all()]
+                correct_display = ", ".join(correct_texts)
+
+                text_answers = [(r.text_answer or "").strip() for r in rs if (r.text_answer or "").strip()]
+                if text_answers:
+                    selected_display = ", ".join(text_answers)
+                    norm = lambda s: s.strip().lower()
+                    corr_set = {norm(t) for t in correct_texts if t is not None}
+                    sel_set = {norm(t) for t in text_answers}
+                    correct_bool = bool(corr_set & sel_set)
+
+            # --- Matching Pairs ---
+            elif qtype == "match":
+                correct_pairs = {mp.left_text: mp.right_text for mp in question.matching_pairs.all()}
+                correct_display = ", ".join([f"{l} → {r}" for l, r in correct_pairs.items()]) if correct_pairs else ""
+                correct_pairs_list = [{"left": l, "right": r} for l, r in correct_pairs.items()]
+
+
+                student_map = {}
+                for r in rs:
+                    mp = r.matched_pairs or {}
+                    if isinstance(mp, dict):
+                        if "mapByLeftLabel" in mp and isinstance(mp["mapByLeftLabel"], dict):
+                            student_map.update({str(k): str(v) for k, v in mp["mapByLeftLabel"].items()})
+                        elif "pairs" in mp and isinstance(mp["pairs"], list):
+                            for p in mp["pairs"]:
+                                ltxt = str(p.get("lText", "")).strip()
+                                rtxt = str(p.get("rText", "")).strip()
+                                if ltxt:
+                                    student_map[ltxt] = rtxt
+                        else:
+                            for k, v in mp.items():
+                                if isinstance(k, str):
+                                    student_map[str(k)] = str(v)
+
+                if student_map:
+                    pairs_list = []
+                    correct_count = 0
+                    total_left = max(len(correct_pairs), 1)
+                    for l, r in student_map.items():
+                        is_correct = correct_pairs.get(l) == r
+                        if is_correct:
+                            correct_count += 1
+                        pairs_list.append({"left": l, "right": r, "correct": is_correct})
+                    selected_display = pairs_list
+                    partial_credit = correct_count / total_left
+                    correct_bool = (partial_credit == 1.0)
+
+            # --- Unknown types ---
+            else:
+                text_answers = [(r.text_answer or "").strip() for r in rs if (r.text_answer or "").strip()]
+                if text_answers:
+                    selected_display = ", ".join(text_answers)
+
+            # --- Scoring ---
+            if qtype == "match":
+                student_results[student]["score"] += partial_credit
+            else:
+                student_results[student]["score"] += 1.0 if correct_bool else 0.0
+
+            # --- Record answer for template ---
             student_results[student]["answers"].append({
-                "question": response.question.text,
-                "type": "match",
-                "selected": pairs,
-                "correct_answer": ", ".join([f"{l} → {r}" for l, r in correct_pairs.items()]),
-            })
-
-        # MCQ, TF, Fill-in-the-Blank
-        else:
-            selected_text = ""
-            correct_text = ""
-
-            if response.question.question_type in ["mcq", "tf"]:
-                selected_text = response.selected_choice.text if response.selected_choice else "No answer"
-                correct_choices = response.question.choices.filter(is_correct=True)
-                correct_text = ", ".join([c.text for c in correct_choices])
-
-            elif response.question.question_type == "fill":
-                selected_text = response.text_answer or "No answer"
-                # Get all blanks for this question
-                correct_blanks = response.question.blank_answers.all()
-                correct_text = ", ".join([b.correct_text for b in correct_blanks])
-
-            # Update score if correct
-            if response.is_correct:
-                student_results[student]["score"] += 1
-
-            student_results[student]["answers"].append({
-                "question": response.question.text,
-                "type": response.question.question_type,
-                "selected": selected_text,
-                "correct_answer": correct_text,
-                "correct": response.is_correct
+                "question": question.text,
+                "type": qtype,
+                "selected": selected_display,
+                "correct_answer": correct_display,
+                "correct_pairs": correct_pairs_list,
+                "correct": correct_bool,
+                "partial": partial_credit if qtype == "matching_pairs" else None,
             })
 
     return render(request, "proctor/teacher_quiz_results.html", {
         "quiz": quiz,
         "student_results": student_results
     })
+
+
 # views.py
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -1348,9 +1191,8 @@ from .models import Quiz
 def delete_quiz(request, quiz_id: int):
     """
     Delete a quiz.
-    - Teachers can delete only their own quizzes.
-    - Admins (superuser or in 'Admins' group) can delete any quiz.
-    - Redirects back to the same pagination page & opens #quizzes tab.
+    Teachers can delete only their own quizzes.
+    Admins (superuser or in 'Admins' group) can delete any quiz.
     """
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
@@ -1362,44 +1204,97 @@ def delete_quiz(request, quiz_id: int):
     if not (is_teacher or is_admin):
         return HttpResponseForbidden("You don't have permission to delete this quiz.")
 
-    # Base queryset is all; restrict for teachers
-    qs = Quiz.objects.all()
-    if is_teacher and not is_admin:
-        qs = qs.filter(teacher=user)
+    # 1) Fetch regardless of owner to give a precise error
+    quiz = get_object_or_404(Quiz, pk=quiz_id)
 
-    quiz = get_object_or_404(qs, pk=quiz_id)
+    # 2) Ownership/permission check
+    owner_id = getattr(quiz, "teacher_id", None)  # adjust if your field is named differently
+    if not is_admin and owner_id != user.id:
+        # You found the quiz, but you aren't allowed to delete it
+        return HttpResponseForbidden("You do not own this quiz, so you cannot delete it.")
 
-    title = quiz.title
+    # 3) Delete and redirect
+    title = getattr(quiz, "title", f"Quiz #{quiz.id}")
     quiz.delete()
     messages.success(request, f'Quiz "{title}" has been deleted.')
 
-    # Prefer `next` hidden input to preserve ?qpage and #quizzes explicitly
     next_url = request.POST.get("next")
     if next_url:
         return redirect(next_url)
 
-    # Fallback to Referer; force #quizzes so the tab stays open
     referer = request.META.get("HTTP_REFERER")
     if referer:
+        # keep #quizzes tab if you use tabs
         if "#quizzes" not in referer:
             referer += "#quizzes"
         return redirect(referer)
 
-    # Final fallback: dashboard/profile with #quizzes
     try:
         return redirect(reverse("teacher_dashboard") + "#quizzes")
     except Exception:
-        # If no teacher_dashboard, send home and keep #quizzes
         return redirect("/#quizzes")
-
-
-from django.shortcuts import get_object_or_404, redirect
+    
+from django.shortcuts import render, get_object_or_404, redirect
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponseForbidden, HttpResponseNotAllowed
+from django.contrib import messages
+from django.urls import reverse
 from .models import Quiz
 
-def edit_quiz(request, quiz_id):
-    # Temporary: Just redirect back to dashboard until full edit is implemented
-    quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
-    return redirect('teacher_dashboard')
+@login_required
+def edit_quiz(request, quiz_id: int):
+    user = request.user
+    is_admin = user.is_superuser or user.groups.filter(name__in=["Admins"]).exists()
+    is_teacher = user.groups.filter(name="Teachers").exists()
+
+    if not (is_teacher or is_admin):
+        return HttpResponseForbidden("You don't have permission to edit quizzes.")
+
+    # Fetch the quiz
+    quiz = get_object_or_404(Quiz, pk=quiz_id)
+
+    # Check ownership if not admin
+    if not is_admin and quiz.teacher_id != user.id:
+        return HttpResponseForbidden("You do not own this quiz.")
+
+    if request.method == "POST":
+        # Update quiz fields from form
+        quiz.title = request.POST.get("title", quiz.title)
+        quiz.time_limit = int(request.POST.get("time_limit", quiz.time_limit))
+        quiz.question_count = int(request.POST.get("question_count", quiz.question_count))
+
+        # Parse datetime-local input
+        from django.utils.dateparse import parse_datetime
+        open_val = request.POST.get("open_date")
+        close_val = request.POST.get("close_date")
+        if open_val:
+            dt = parse_datetime(open_val)
+            if dt:
+                from django.utils import timezone
+                if timezone.is_naive(dt):
+                    dt = timezone.make_aware(dt, timezone.get_current_timezone())
+                quiz.open_time = dt
+        if close_val:
+            dt = parse_datetime(close_val)
+            if dt:
+                from django.utils import timezone
+                if timezone.is_naive(dt):
+                    dt = timezone.make_aware(dt, timezone.get_current_timezone())
+                quiz.close_time = dt
+
+        quiz.save()
+        messages.success(request, f'Quiz "{quiz.title}" updated successfully.')
+        return redirect(reverse("edit_quiz", args=[quiz.id]))
+
+    # For GET: convert datetime for datetime-local input
+    open_value = quiz.open_time.strftime("%Y-%m-%dT%H:%M") if quiz.open_time else ""
+    close_value = quiz.close_time.strftime("%Y-%m-%dT%H:%M") if quiz.close_time else ""
+
+    return render(request, "proctor/edit_quiz.html", {
+        "quiz": quiz,
+        "open_value": open_value,
+        "close_value": close_value,
+    })
 
 # proctor/views.py
 from django.shortcuts import render
@@ -1521,209 +1416,325 @@ def quiz_results(request, quiz_id):
         "results": student_results,
     })
 
+# views.py
+from collections import defaultdict
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from django.db.models import Prefetch
+from django.shortcuts import redirect, render
+from django.utils import timezone
+
+from .models import Quiz, Choice, BlankAnswer, MatchingPair, StudentResponse
+from .utils import is_teacher  # if you have this helper; else inline the group check
+
+
+def _norm_type(s: str) -> str:
+    """Normalize question_type into canonical tokens: mcq, tf, fill, match."""
+    if not s:
+        return ""
+    t = s.strip().lower().replace("_", "").replace("-", "").replace(" ", "")
+    if t in {"multiple", "mcq", "multiplechoice"}:
+        return "mcq"
+    if t in {"truefalse", "tf", "truef", "truefalsequestion"}:
+        return "tf"
+    if t in {"fill", "blank", "fillintheblank", "fillintheblanks", "fib"}:
+        return "fill"
+    if t in {"match", "matching"}:
+        return "match"
+    return t
+
+
 @login_required
 def results_overview(request):
     if not is_teacher(request.user):
         messages.error(request, 'Access restricted to teachers.')
         return redirect('home')
 
-    # Get all quizzes for the teacher
-    quizzes = Quiz.objects.filter(teacher=request.user).order_by('-created_at')
-    
-    # Calculate comprehensive statistics
+    # All quizzes for this teacher
+    quizzes = (
+        Quiz.objects.filter(teacher=request.user)
+        .order_by('-created_at')
+        .prefetch_related(
+            Prefetch("questions__choices", queryset=Choice.objects.all()),
+            Prefetch("questions__blank_answers", queryset=BlankAnswer.objects.all()),
+            Prefetch("questions__matching_pairs", queryset=MatchingPair.objects.all()),
+        )
+    )
+
+    # Top-line counts
     total_quizzes = quizzes.count()
     published_quizzes = quizzes.filter(status='published').count()
     draft_quizzes = quizzes.filter(status='draft').count()
-    
-    # Get all student responses for teacher's quizzes
-    all_responses = StudentResponse.objects.filter(quiz__teacher=request.user)
-    total_responses = all_responses.count()
-    
-    # Calculate average scores
+
+    # We’ll compute totals from StudentResponse per quiz as needed
+    all_responses_qs = StudentResponse.objects.filter(quiz__teacher=request.user)
+    total_responses = all_responses_qs.count()
+
     quiz_stats = []
-    for quiz in quizzes:
-        responses = StudentResponse.objects.filter(quiz=quiz)
-        if responses.exists():
-            # Group by student to get individual scores
-            student_scores = {}
-            for response in responses:
-                student = response.student
-                if student not in student_scores:
-                    student_scores[student] = {'correct': 0, 'total': 0}
-                student_scores[student]['total'] += 1
-                if response.is_correct:
-                    student_scores[student]['correct'] += 1
-            
-            # Calculate statistics
-            scores = []
-            for student, data in student_scores.items():
-                if data['total'] > 0:
-                    percentage = (data['correct'] / data['total']) * 100
-                    scores.append(percentage)
-            
-            if scores:
-                avg_score = sum(scores) / len(scores)
-                max_score = max(scores)
-                min_score = min(scores)
-                students_count = len(scores)
-            else:
-                avg_score = max_score = min_score = 0
-                students_count = 0
+    performance_data = []  # last 5 by created_at (already ordered)
+
+    def score_for_student_question(question, responses_for_q):
+        """
+        Return a float in [0,1] representing the score for this question
+        for a given student (aggregate all StudentResponse rows).
+        """
+        qtype = _norm_type(question.question_type)
+
+        if qtype in {"mcq", "tf"}:
+            correct_ids = set(question.choices.filter(is_correct=True).values_list("id", flat=True))
+            selected_ids = {r.selected_choice_id for r in responses_for_q if r.selected_choice_id}
+            # exact set match → 1; else 0
+            return 1.0 if selected_ids == correct_ids else 0.0
+
+        if qtype == "fill":
+            correct_texts = [b.correct_text for b in question.blank_answers.all()]
+            if not correct_texts:
+                return 0.0
+            norm = lambda s: (s or "").strip().lower()
+            corr_set = {norm(t) for t in correct_texts}
+            answers = [norm(r.text_answer) for r in responses_for_q if (r.text_answer or "").strip()]
+            sel_set = set(a for a in answers if a)
+            return 1.0 if (corr_set & sel_set) else 0.0  # simple policy: any one matches
+
+        if qtype == "match":
+            # Build correct mapping
+            correct_map = {mp.left_text: mp.right_text for mp in question.matching_pairs.all()}
+            if not correct_map:
+                return 0.0
+
+            # Extract student's map (merge if multiple rows)
+            student_map = {}
+            for r in responses_for_q:
+                mp = r.matched_pairs or {}
+                if not isinstance(mp, dict):
+                    continue
+                if "mapByLeftLabel" in mp and isinstance(mp["mapByLeftLabel"], dict):
+                    for k, v in mp["mapByLeftLabel"].items():
+                        student_map[str(k)] = str(v)
+                elif "pairs" in mp and isinstance(mp["pairs"], list):
+                    for p in mp["pairs"]:
+                        ltxt = str(p.get("lText", "")).strip()
+                        rtxt = str(p.get("rText", "")).strip()
+                        if ltxt:
+                            student_map[ltxt] = rtxt
+                else:
+                    # legacy: flat dict
+                    for k, v in mp.items():
+                        if isinstance(k, str):
+                            student_map[str(k)] = str(v)
+
+            # Fractional credit: correct matches / total left sides
+            total_left = max(len(correct_map), 1)
+            correct_count = sum(1 for l, r in student_map.items() if correct_map.get(l) == r)
+            return correct_count / total_left
+
+        # Unknown: 0 credit by default (or change to len(text_answer)>0 ? 1 : 0)
+        return 0.0
+
+    # Build stats per quiz
+    for idx, quiz in enumerate(quizzes):
+        questions = list(quiz.questions.all())
+        total_questions = len(questions) if questions else 0
+
+        # Collect this quiz's responses and group by student, then by question
+        rs = (
+            StudentResponse.objects
+            .filter(quiz=quiz)
+            .select_related("student", "question", "selected_choice")
+            .order_by("student_id", "question_id", "id")
+        )
+
+        per_student = defaultdict(lambda: defaultdict(list))  # student -> question -> list[responses]
+        for r in rs:
+            per_student[r.student][r.question].append(r)
+
+        # Compute per-student percentages
+        percentages = []
+        for student, qmap in per_student.items():
+            if total_questions == 0:
+                continue
+            total_points = 0.0
+            # ensure every question gets evaluated (even if unanswered)
+            for q in questions:
+                total_points += score_for_student_question(q, qmap.get(q, []))
+            pct = (total_points / total_questions) * 100.0
+            percentages.append(pct)
+
+        if percentages:
+            avg_score = sum(percentages) / len(percentages)
+            max_score = max(percentages)
+            min_score = min(percentages)
+            students_count = len(percentages)
         else:
-            avg_score = max_score = min_score = 0
+            avg_score = max_score = min_score = 0.0
             students_count = 0
-        
+
         quiz_stats.append({
             'quiz': quiz,
             'students_count': students_count,
             'avg_score': round(avg_score, 1),
             'max_score': round(max_score, 1),
             'min_score': round(min_score, 1),
-            'total_questions': quiz.questions.count(),
+            'total_questions': total_questions,
         })
-    
-    # Recent activity - last 10 responses
-    recent_responses = (StudentResponse.objects
-                       .filter(quiz__teacher=request.user)
-                       .select_related('student', 'quiz', 'question')
-                       .order_by('-id')[:10])
-    
-    # Performance trends (last 5 quizzes)
-    recent_quizzes = quizzes[:5]
-    performance_data = []
-    for quiz in recent_quizzes:
-        responses = StudentResponse.objects.filter(quiz=quiz)
-        if responses.exists():
-            correct_responses = responses.filter(is_correct=True).count()
-            total_responses = responses.count()
-            if total_responses > 0:
-                success_rate = (correct_responses / total_responses) * 100
-            else:
-                success_rate = 0
-        else:
-            success_rate = 0
-        
-        performance_data.append({
-            'quiz_title': quiz.title,
-            'success_rate': round(success_rate, 1),
-            'created_date': quiz.created_at
+
+        # Build performance trend entry for first 5 quizzes
+        if idx < 5:
+            performance_data.append({
+                'quiz_title': quiz.title,
+                'success_rate': round(avg_score, 1),  # use avg_score as success_rate proxy
+                'created_date': quiz.created_at,
+            })
+
+    # Recent activity: last 10 responses, with computed correctness
+    recent_qs = (
+        StudentResponse.objects
+        .filter(quiz__teacher=request.user)
+        .select_related('student', 'quiz', 'question', 'selected_choice')
+        .order_by('-id')[:10]
+    )
+
+    recent_items = []
+    for r in recent_qs:
+        # compute correctness for THIS single response within its question context
+        # For MCQ multi-select, we consider all responses for this student+question near this id window
+        siblings = (
+            StudentResponse.objects
+            .filter(quiz=r.quiz, student=r.student, question=r.question)
+            .select_related("selected_choice")
+        )
+        correct = score_for_student_question(r.question, list(siblings)) >= 1.0
+        recent_items.append({
+            "student_name": r.student.get_full_name() or r.student.username,
+            "quiz_title": r.quiz.title,
+            "question_text": getattr(r.question, "text", ""),
+            "correct": correct,
+            "created_at": getattr(r, "created_at", None) or timezone.now(),
         })
-    
+
     context = {
         'total_quizzes': total_quizzes,
         'published_quizzes': published_quizzes,
         'draft_quizzes': draft_quizzes,
         'total_responses': total_responses,
         'quiz_stats': quiz_stats,
-        'recent_responses': recent_responses,
         'performance_data': performance_data,
+        'recent_items': recent_items,   # <-- use this in template (see below)
         'now': timezone.now(),
     }
-    
     return render(request, 'proctor/results_overview.html', context)
 
-from django.utils.dateparse import parse_datetime
-from django.http import HttpResponse
-from .models import ProctorEvent
-
+from django.contrib.auth.decorators import login_required
 from django.utils import timezone
+from django.shortcuts import render, get_object_or_404, redirect
 from django.utils.dateparse import parse_datetime
-from django.views.decorators.cache import never_cache
 from django.http import HttpResponse
-from django.shortcuts import render, redirect, get_object_or_404
+from django.views.decorators.cache import never_cache
 from django.contrib import messages
+from .models import Quiz, ProctorAlert
+from .utils import is_teacher  # your helper to check teacher role
 
 @login_required
 @never_cache
 def proctor_logs(request, quiz_id):
     if not is_teacher(request.user):
-        messages.error(request, 'Access restricted to teachers.')
-        return redirect('home')
+        messages.error(request, "Access restricted to teachers.")
+        return redirect("home")
 
     quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
-    qs = ProctorEvent.objects.filter(quiz=quiz).select_related("student").order_by("-created_at")
+    qs = ProctorAlert.objects.filter(quiz=quiz).select_related("student", "quiz").order_by("-timestamp")
 
-    # filters (optional)
-    student = request.GET.get('student')
+    # filters
+    student = request.GET.get("student")
     if student:
-        qs = qs.filter(student__username=student)
+        qs = qs.filter(student__username__icontains=student)
 
-    evt_type = request.GET.get('type')
+    evt_type = request.GET.get("type")
     if evt_type:
-        qs = qs.filter(event_type=evt_type)
+        qs = qs.filter(alert_type__icontains=evt_type)
 
-    since = request.GET.get('since')  # ISO-8601
+    since = request.GET.get("since")
     if since:
         dt = parse_datetime(since)
         if dt:
             if timezone.is_naive(dt):
                 dt = timezone.make_aware(dt, timezone.get_current_timezone())
-            qs = qs.filter(created_at__gte=dt)
+            qs = qs.filter(timestamp__gte=dt)
 
-    fmt = request.GET.get('format')
-    if fmt == 'csv':
+    if request.GET.get("format") == "csv":
         import csv
-        resp = HttpResponse(content_type='text/csv')
-        resp['Content-Disposition'] = f'attachment; filename="proctor_logs_{quiz.id}.csv"'
-        w = csv.writer(resp)
-        w.writerow(['created_at','student','event_type','severity','message','metadata'])
+        resp = HttpResponse(content_type="text/csv")
+        resp["Content-Disposition"] = f'attachment; filename="proctor_alerts_{quiz.id}.csv"'
+        writer = csv.writer(resp)
+        writer.writerow(["timestamp", "student", "alert_type", "severity", "message"])
         for e in qs.iterator():
-            w.writerow([e.created_at.isoformat(), e.student.username, e.event_type, e.severity, e.message, e.metadata])
+            writer.writerow([e.timestamp.isoformat(), e.student.username, e.alert_type, getattr(e, "severity", ""), getattr(e, "message", "")])
         return resp
 
-    # initial render caps to keep page snappy
-    return render(request, 'proctor/proctor_logs.html', {
-        'quiz': quiz,
-        'events': qs[:1000],
+    return render(request, "proctor/proctor_logs.html", {
+        "quiz": quiz,
+        "events": qs[:1000],
     })
+
 
 @login_required
 @never_cache
 def proctor_logs_partial(request, quiz_id):
-    """Returns just the <tbody> rows so HTMX can poll for fresh items."""
     if not is_teacher(request.user):
         return HttpResponse(status=403)
 
     quiz = get_object_or_404(Quiz, id=quiz_id, teacher=request.user)
-    qs = ProctorEvent.objects.filter(quiz=quiz).select_related("student").order_by("-created_at")
+    qs = ProctorAlert.objects.filter(quiz=quiz).select_related("student", "quiz").order_by("-timestamp")
 
-    # if client passes latest_ts, only send newer rows
     latest_ts = request.GET.get("latest_ts")
     if latest_ts:
         dt = parse_datetime(latest_ts)
         if dt:
             if timezone.is_naive(dt):
                 dt = timezone.make_aware(dt, timezone.get_current_timezone())
-            qs = qs.filter(created_at__gt=dt)
+            qs = qs.filter(timestamp__gt=dt)
 
-    events = qs[:200]  # small batch for polling
-    return render(request, 'proctor/_proctor_rows.html', {'events': events})
+    events = qs[:200]
+    return render(request, "proctor/_proctor_rows.html", {"events": events})
+
 
 @login_required
 @never_cache
 def proctor_logs_all(request):
     if not is_teacher(request.user):
-        messages.error(request, 'Access restricted to teachers.')
-        return redirect('home')
+        messages.error(request, "Access restricted to teachers.")
+        return redirect("home")
 
-    qs = ProctorEvent.objects.filter(quiz__teacher=request.user).select_related("student","quiz").order_by("-created_at")
+    qs = ProctorAlert.objects.select_related("student", "quiz").order_by("-timestamp")
 
-    # optional filters
     quiz_id = request.GET.get("quiz")
     if quiz_id and quiz_id != "all":
         qs = qs.filter(quiz_id=quiz_id)
 
-    student = request.GET.get('student')
+    student = request.GET.get("student")
     if student:
-        qs = qs.filter(student__username=student)
+        qs = qs.filter(student__username__icontains=student)
 
-    evt_type = request.GET.get('type')
+    evt_type = request.GET.get("type")
     if evt_type:
-        qs = qs.filter(event_type=evt_type)
+        qs = qs.filter(alert_type__icontains=evt_type)
+
+    # CSV export
+    if request.GET.get("format") == "csv":
+        import csv
+        resp = HttpResponse(content_type="text/csv")
+        resp["Content-Disposition"] = 'attachment; filename="proctor_alerts_all.csv"'
+        writer = csv.writer(resp)
+        writer.writerow(["timestamp", "quiz", "student", "alert_type", "message"])
+        for e in qs.iterator():
+            writer.writerow([e.timestamp.isoformat(), e.quiz.title, e.student.username, e.alert_type, e.message or ""])
+        return resp
+
+    quizzes = Quiz.objects.filter(teacher=request.user).only("id", "title").order_by("title")
 
     return render(request, "proctor/proctor_logs_all.html", {
         "events": qs[:1000],
-        "quizzes": Quiz.objects.filter(teacher=request.user).only("id","title").order_by("title"),
+        "quizzes": quizzes,
         "selected_quiz": quiz_id or "all",
     })
 
@@ -1879,3 +1890,16 @@ def edit_quiz_view(request, quiz_id):
         "open_value": to_local_input(quiz.open_time),
         "close_value": to_local_input(quiz.close_time),
     })
+
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def snapshot_view(request, alert_id):
+    alert = get_object_or_404(ProctorAlert, id=alert_id)
+
+    if not alert.snapshot_data:
+        return HttpResponse("No snapshot available", status=404)
+
+    return HttpResponse(alert.snapshot_data, content_type=alert.snapshot_mime)

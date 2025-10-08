@@ -28,11 +28,10 @@ urlpatterns = [
     path('student/logs/', views.student_logs, name='student_logs'),  # fixed to be consistent
     # Webcam app
     path('webcam/', include('webcam.urls')),
+    path('face/', include('face_app.urls')),
     # Face capture
-    path('verify-face/', views.verify_face, name='verify_face'),
     path('capture-face/', views.capture_face_view, name='capture_face'),
     path('capture_started/', views.capture_started, name='capture_started'),
-    path('check_face_file/', views.check_face_file, name='check_face_file'),  # for Done button
     path('teacher/quiz/<int:quiz_id>/results/', views.teacher_quiz_results, name='teacher_quiz_results'),
     path('teacher/results-overview/', views.results_overview, name='results_overview'),
 
@@ -56,6 +55,8 @@ urlpatterns = [
     path('teacher/<int:quiz_id>/', views.proctor_logs, name='proctor_logs'),
     path('teacher/<int:quiz_id>/', views.proctor_logs_partial, name='proctor_logs_partial'),
     path('teacher/', views.proctor_logs_all, name='proctor_logs_all'),
+    path('proctor/snapshot/<int:alert_id>/', views.snapshot_view, name='snapshot_view'),
+
 
 ]
 if settings.DEBUG:

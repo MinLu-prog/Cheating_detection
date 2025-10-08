@@ -1,14 +1,17 @@
 {% for e in events %}
-<tr class="border-t hover:bg-gray-50" data-ts="{{ e.created_at|date:'c' }}">
-  <td class="px-3 py-2 whitespace-nowrap" title="{{ e.created_at|date:'c' }}">
-    {{ e.created_at|timesince }} ago
+<tr class="border-t hover:bg-gray-50" data-ts="{{ e.timestamp|date:'c' }}">
+  <td class="px-3 py-2 whitespace-nowrap" title="{{ e.timestamp|date:'c' }}">
+    {{ e.timestamp|timesince }} ago
+  </td>
+  <td class="px-3 py-2">
+    <a href="{% url 'proctor_logs' e.quiz.id %}" class="text-blue-700 underline">{{ e.quiz.title }}</a>
   </td>
   <td class="px-3 py-2">{{ e.student.username }}</td>
   <td class="px-3 py-2">
-    <span class="px-2 py-0.5 rounded bg-gray-100 border">{{ e.event_type }}</span>
+    <span class="px-2 py-0.5 rounded bg-gray-100 border">{{ e.alert_type }}</span>
   </td>
   <td class="px-3 py-2">
-    {% with s=e.severity %}
+    {% with s=e.severity|default:"low" %}
       <span class="px-2 py-0.5 rounded
         {% if s == 'high' %} bg-red-100 text-red-700 border border-red-200
         {% elif s == 'medium' %} bg-yellow-100 text-yellow-800 border border-yellow-200
@@ -17,15 +20,19 @@
       </span>
     {% endwith %}
   </td>
-  <td class="px-3 py-2 max-w-[40ch] truncate" title="{{ e.message }}">{{ e.message }}</td>
+  <td class="px-3 py-2 max-w-[40ch] truncate" title="{{ e.message|default:'' }}">
+    {{ e.message|default:'' }}
+  </td>
   <td class="px-3 py-2">
-    {% if e.frame %}
-      <a href="{{ e.frame.url }}" target="_blank" title="Open full image">
-        <img src="{{ e.frame.url }}" alt="snap" class="h-12 w-16 object-cover rounded">
+    {% if e.snapshot_data %}
+      <a href="{% url 'snapshot_view' e.id %}" target="_blank" title="Open full image">
+        <img src="{% url 'snapshot_view' e.id %}" alt="snap" class="h-12 w-16 object-cover rounded">
       </a>
-    {% else %} — {% endif %}
+    {% else %}
+      —
+    {% endif %}
   </td>
 </tr>
 {% empty %}
-<tr><td class="px-3 py-4 text-gray-500" colspan="6">No events yet.</td></tr>
+<tr><td class="px-3 py-4 text-gray-500" colspan="7">No events yet.</td></tr>
 {% endfor %}
